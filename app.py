@@ -21,14 +21,28 @@ def conectar_google_sheet():
 @st.cache_data
 def cargar_datos():
     try:
-        # Cargar catálogo con los NUEVOS ENCABEZADOS
+        # Intento 1: Lectura estándar
         df_cat = pd.read_csv('catalogo_fallas.csv')
-        # Forzamos que todo sea texto para evitar errores
+        
+        # TRUCO: Si detecta solo 1 columna, seguro es porque el separador es punto y coma (Excel latino)
+        if len(df_cat.columns) < 2:
+            df_cat = pd.read_csv('catalogo_fallas.csv', sep=';', encoding='latin-1')
+
+        # Limpieza CRÍTICA: Quitamos espacios vacíos en los nombres de las columnas
+        # Ejemplo: "AREA " se convierte en "AREA"
+        df_cat.columns = df_cat.columns.str.strip()
+        
+        # Convertimos todo a texto para evitar errores de números
         df_cat = df_cat.astype(str)
         
+        # Cargamos técnicos
         df_tec = pd.read_csv('tecnicos.csv', dtype={'ID': str})
+        
         return df_cat, df_tec
-    except:
+
+    except Exception as e:
+        # ESTO ES LO NUEVO: Si falla, te mostrará el error exacto en pantalla roja
+        st.error(f"⚠️ Error cargando archivo: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
 df_catalogo, df_tecnicos = cargar_datos()
@@ -208,4 +222,5 @@ elif menu == "📊 Estadísticas":
 
             st.dataframe(df.tail(5))
         else:
+
             st.info("Sin datos.")
