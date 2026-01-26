@@ -143,7 +143,7 @@ if menu == "📝 Nuevo Reporte":
         acciones = st.text_area("Acciones Correctivas / Actividad")
         solucion = st.text_area("Solución Final")
 
-    # --- SECCIÓN 5: TIEMPOS (ACTUALIZADO) ---
+        # --- SECCIÓN 5: TIEMPOS (ACTUALIZADO) ---
         st.subheader("5. Tiempos")
         t1, t2 = st.columns(2)
         
@@ -154,7 +154,7 @@ if menu == "📝 Nuevo Reporte":
         
         comentario = st.text_input("Comentario Adicional")
 
-    if enviar:
+        if enviar:
         if not responsable:
             st.error("⚠️ Falta validar al Responsable.")
         elif not celda or not robot:
@@ -237,6 +237,7 @@ elif menu == "📊 Estadísticas":
         else:
 
             st.info("Sin datos.")
+
 
 
 
