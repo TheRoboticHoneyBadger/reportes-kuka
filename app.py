@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime, date, timedelta, time
 import gspread
 import plotly.express as px
-import os # Para verificar si existe el logo
+import os
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Mantenimiento KUKA", page_icon="🤖", layout="wide")
@@ -17,21 +17,6 @@ def conectar_google_sheet():
     except Exception as e:
         st.error(f"Error de conexión: {e}")
         return None
-
-# --- FUNCIÓN INTELIGENTE PARA LEER HORA ---
-def interpretar_numero(numero_input):
-    if numero_input is None:
-        return datetime.now().time()
-    
-    texto = str(int(numero_input)).zfill(4)
-    try:
-        horas = int(texto[:2])
-        minutos = int(texto[2:])
-        if horas > 23: horas = 23
-        if minutos > 59: minutos = 59
-        return time(horas, minutos)
-    except:
-        return datetime.now().time()
 
 # --- CARGA DE DATOS ---
 @st.cache_data
@@ -56,17 +41,16 @@ menu = st.sidebar.radio("Ir a:", ["📝 Nuevo Reporte", "📊 Estadísticas"])
 # ==========================================
 if menu == "📝 Nuevo Reporte":
     
-    # --- LOGO ENCABEZADO ---
-    col_logo, col_titulo = st.columns([1, 4])
+    # ENCABEZADO
+    col_logo, col_titulo = st.columns([1, 5])
     with col_logo:
-        # Intenta cargar 'logo.png' si existe, si no, usa un icono online
         if os.path.exists("logo.png"):
             st.image("logo.png", width=100)
         else:
-            # Logo genérico por si no has subido el tuyo
             st.image("https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=80)
+    
     with col_titulo:
-        st.title("Reporte KUKA")
+        st.title("Reporte de fallas de mantenimiento")
 
     st.markdown("---")
 
@@ -143,28 +127,38 @@ if menu == "📝 Nuevo Reporte":
         acciones = st.text_area("Acciones Correctivas / Actividad")
         solucion = st.text_area("Solución Final")
 
-        # --- 5. TIEMPOS (VELOCIDAD + VISTA PREVIA) ---
+        # --- 5. TIEMPOS (RELOJ DIGITAL FIJO) ---
         st.subheader("5. Tiempos")
-        t1, t2 = st.columns(2)
         
-        # Hora Actual por defecto
+        # Obtenemos la hora actual para prellenar
         ahora = datetime.now()
-        valor_defecto = int(ahora.strftime("%H%M"))
         
-        with t1:
-            st.markdown("**(1) Hora Inicio** (Ej: 1430)")
-            num_ini = st.number_input("Ingresa Hora Inicio", value=valor_defecto, step=1, label_visibility="collapsed")
-            # VISTA PREVIA VISUAL
-            h_inicio = interpretar_numero(num_ini)
-            st.caption(f"🕒 **{h_inicio.strftime('%H:%M')}**") # Aquí aparecen los dos puntos
+        # Creamos columnas: [Hora] [ : ] [Minuto]  --Espacio--  [Hora] [ : ] [Minuto]
+        c_h1, c_sep1, c_m1, c_gap, c_h2, c_sep2, c_m2 = st.columns([1, 0.2, 1, 0.5, 1, 0.2, 1])
+        
+        with c_h1:
+            st.caption("Hora Inicio")
+            # format="%02d" hace que el numero se vea como "09" en vez de "9"
+            h_ini = st.number_input("HI", value=ahora.hour, min_value=0, max_value=23, step=1, format="%02d", label_visibility="collapsed")
+        with c_sep1:
+            st.write("## :") # Los dos puntos fijos y grandes
+        with c_m1:
+            st.caption("Min Inicio")
+            m_ini = st.number_input("MI", value=ahora.minute, min_value=0, max_value=59, step=1, format="%02d", label_visibility="collapsed")
+            
+        with c_h2:
+            st.caption("Hora Fin")
+            h_fin = st.number_input("HF", value=ahora.hour, min_value=0, max_value=23, step=1, format="%02d", label_visibility="collapsed")
+        with c_sep2:
+            st.write("## :")
+        with c_m2:
+            st.caption("Min Fin")
+            m_fin = st.number_input("MF", value=ahora.minute, min_value=0, max_value=59, step=1, format="%02d", label_visibility="collapsed")
 
-        with t2:
-            st.markdown("**(2) Hora Fin** (Ej: 1500)")
-            num_fin = st.number_input("Ingresa Hora Fin", value=valor_defecto, step=1, label_visibility="collapsed")
-            # VISTA PREVIA VISUAL
-            h_fin = interpretar_numero(num_fin)
-            st.caption(f"🕒 **{h_fin.strftime('%H:%M')}**") # Aquí aparecen los dos puntos
-
+        # Reconstruimos las horas para el cálculo
+        hora_inicio = time(h_ini, m_ini)
+        hora_fin = time(h_fin, m_fin)
+        
         comentario = st.text_input("Comentario Adicional")
 
         enviar = st.form_submit_button("Guardar Reporte", type="primary")
@@ -177,8 +171,8 @@ if menu == "📝 Nuevo Reporte":
         else:
             fecha_hoy = date.today()
             semana = fecha_hoy.isocalendar()[1]
-            dt_ini = datetime.combine(fecha_hoy, h_inicio)
-            dt_fin = datetime.combine(fecha_hoy, h_fin)
+            dt_ini = datetime.combine(fecha_hoy, hora_inicio)
+            dt_fin = datetime.combine(fecha_hoy, hora_fin)
             if dt_fin < dt_ini: dt_fin += timedelta(days=1)
             tiempo_muerto = int((dt_fin - dt_ini).total_seconds() / 60)
 
@@ -199,8 +193,6 @@ if menu == "📝 Nuevo Reporte":
 # ==========================================
 elif menu == "📊 Estadísticas":
     st.title("📊 Indicadores")
-    
-    # Logo también en estadísticas
     if os.path.exists("logo.png"):
         st.image("logo.png", width=80)
         
