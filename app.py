@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, date, timedelta, time
 import gspread
 import plotly.express as px
+import re # Librería para entender el texto de la hora
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Mantenimiento KUKA", page_icon="🤖", layout="wide")
@@ -17,13 +18,38 @@ def conectar_google_sheet():
         st.error(f"Error de conexión: {e}")
         return None
 
+# --- FUNCIÓN INTELIGENTE PARA LEER LA HORA ---
+def interpretar_hora(texto_input):
+    """Convierte texto como '1430', '14:30' o '14.30' en una hora real."""
+    if not texto_input:
+        return datetime.now().time()
+    
+    # Limpiamos el texto (quitamos espacios)
+    texto = str(texto_input).strip().replace(".", ":").replace(",", ":")
+    
+    try:
+        if ":" in texto:
+            # Formato 14:30
+            h, m = texto.split(":")
+            return time(int(h), int(m))
+        elif len(texto) == 4:
+            # Formato 1430
+            return time(int(texto[:2]), int(texto[2:]))
+        elif len(texto) <= 2:
+            # Formato 14 (Asume 14:00)
+            return time(int(texto), 0)
+        else:
+            return datetime.now().time()
+    except:
+        return datetime.now().time()
+
 # --- CARGA DE DATOS LOCALES ---
 @st.cache_data
 def cargar_datos():
     try:
         df_cat = pd.read_csv('catalogo_fallas.csv')
-        # LIMPIEZA AUTOMÁTICA DE COLUMNAS (Para evitar el KeyError)
-        # Quita espacios al inicio/final y convierte a mayúsculas
+        # LIMPIEZA EXTREMA DE COLUMNAS
+        # Convierte todo a mayúsculas y quita espacios extraños
         df_cat.columns = df_cat.columns.str.strip().str.upper()
         df_cat = df_cat.astype(str)
         
@@ -77,18 +103,19 @@ if menu == "📝 Nuevo Reporte":
         tipo_orden = u4.selectbox("Tipo de Orden", ["Correctivo", "Preventivo", "Mejora", "Falla Menor"])
         status = u5.selectbox("Status", ["Cerrada", "Abierta", "Pendiente de Refacción"])
 
-        # --- SECCIÓN 3: DETALLE DE LA FALLA ---
+        # --- SECCIÓN 3: DETALLE DE LA FALLA (ROBUSTO) ---
         st.subheader("3. Detalle de la Falla")
         
         col_cat1, col_cat2 = st.columns(2)
         
-        # Usamos .get para evitar error si la columna no existe
-        col_area = 'AREA' if 'AREA' in df_catalogo.columns else df_catalogo.columns[0]
+        # Buscamos la columna de AREA inteligentemente
+        col_area = next((c for c in df_catalogo.columns if "AREA" in c), df_catalogo.columns[0] if not df_catalogo.empty else "None")
         areas = df_catalogo[col_area].unique() if not df_catalogo.empty else []
         area_sel = col_cat1.selectbox("Área", areas)
         
+        # Buscamos la columna de TIPO
         tipos = []
-        col_tipo = 'TIPO' if 'TIPO' in df_catalogo.columns else df_catalogo.columns[1]
+        col_tipo = next((c for c in df_catalogo.columns if "TIPO" in c), df_catalogo.columns[1] if not df_catalogo.empty else "None")
         
         if not df_catalogo.empty:
             df_filtrado_area = df_catalogo[df_catalogo[col_area] == area_sel]
@@ -96,14 +123,16 @@ if menu == "📝 Nuevo Reporte":
         tipo_sel = col_cat2.selectbox("Tipo de Falla", tipos)
 
         lista_opciones = ["Sin datos"]
+        col_codigo = "None"
+        col_submodo = "None"
+
         if not df_catalogo.empty and len(tipos) > 0:
             df_final = df_filtrado_area[df_filtrado_area[col_tipo] == tipo_sel]
             
-            # Buscamos las columnas correctas aunque tengan nombres raros
-            col_codigo = 'CODIGO DE FALLO' if 'CODIGO DE FALLO' in df_final.columns else df_final.columns[2]
-            # Buscamos algo que se parezca a SUB MODO
-            cols_posibles = [c for c in df_final.columns if "SUB" in c or "MODO" in c]
-            col_submodo = cols_posibles[0] if cols_posibles else df_final.columns[-2] # Fallback
+            # Búsqueda inteligente de columnas de Código y Submodo
+            col_codigo = next((c for c in df_final.columns if "CODIGO" in c), df_final.columns[2])
+            # Busca columnas que tengan "SUB" o "MODO" o "DESCRIPCION"
+            col_submodo = next((c for c in df_final.columns if "SUB" in c or "MODO" in c or "DESC" in c), df_final.columns[-1])
             
             lista_opciones = df_final[col_codigo] + " - " + df_final[col_submodo]
         
@@ -125,31 +154,23 @@ if menu == "📝 Nuevo Reporte":
         acciones = st.text_area("Acciones Correctivas / Actividad")
         solucion = st.text_area("Solución Final")
 
-        # --- SECCIÓN 5: TIEMPOS (NUEVO FORMATO: RODILLOS) ---
+        # --- SECCIÓN 5: TIEMPOS (ENTRADA RÁPIDA DE TEXTO) ---
         st.subheader("5. Tiempos")
-        st.caption("Selecciona Hora y Minutos por separado")
+        st.caption("Escribe la hora (Ej: 2145 para las 21:45)")
         
-        # Fila para HORA INICIO
-        col_h1, col_m1, col_sep, col_h2, col_m2 = st.columns([1, 1, 0.5, 1, 1])
+        t1, t2 = st.columns(2)
         
-        with col_h1:
-            st.markdown("**Inicio:**")
-            h_ini_val = st.selectbox("Hora (Ini)", range(24), key="h_i")
-        with col_m1:
-            st.markdown("&nbsp;") # Espacio vacío para alinear
-            m_ini_val = st.selectbox("Min (Ini)", range(60), key="m_i")
+        # Pre-llenamos con la hora actual
+        hora_actual_str = datetime.now().strftime("%H:%M")
+        
+        with t1:
+            h_ini_txt = st.text_input("Hora Inicio", value=hora_actual_str, max_chars=5)
+        with t2:
+            h_fin_txt = st.text_input("Hora Fin", value=hora_actual_str, max_chars=5)
             
-        # Fila para HORA FIN
-        with col_h2:
-            st.markdown("**Fin:**")
-            h_fin_val = st.selectbox("Hora (Fin)", range(24), key="h_f", index=min(h_ini_val, 23))
-        with col_m2:
-            st.markdown("&nbsp;")
-            m_fin_val = st.selectbox("Min (Fin)", range(60), key="m_f")
-
-        # Construimos los objetos de tiempo reales
-        h_inicio = time(h_ini_val, m_ini_val)
-        h_fin = time(h_fin_val, m_fin_val)
+        # Convertimos lo que escribiste en horas reales
+        h_inicio = interpretar_hora(h_ini_txt)
+        h_fin = interpretar_hora(h_fin_txt)
         
         comentario = st.text_input("Comentario Adicional")
 
@@ -192,6 +213,9 @@ elif menu == "📊 Estadísticas":
         if len(data) > 0:
             df = pd.DataFrame(data)
             
+            # Convertimos columnas a Mayúsculas para evitar problemas
+            df.columns = df.columns.str.strip().str.upper()
+            
             if 'TIEMPO MUERTO' in df.columns:
                 df['TIEMPO MUERTO'] = pd.to_numeric(df['TIEMPO MUERTO'], errors='coerce').fillna(0)
                 total_tm = df['TIEMPO MUERTO'].sum()
@@ -207,9 +231,9 @@ elif menu == "📊 Estadísticas":
                 if 'ROBOT' in df.columns:
                     st.plotly_chart(px.bar(df, x='ROBOT', y='TIEMPO MUERTO', color='CELDA'), use_container_width=True)
             with tab2:
-                # Buscamos columna de Código
-                col_code = 'CODIGO DE FALLO' if 'CODIGO DE FALLO' in df.columns else df.columns[7]
-                if col_code in df.columns:
+                # Busca columna de código de fallo
+                col_code = next((c for c in df.columns if "CODIGO" in c), None)
+                if col_code:
                     st.plotly_chart(px.pie(df, names=col_code), use_container_width=True)
 
             st.dataframe(df.tail(5))
