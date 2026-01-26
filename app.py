@@ -8,32 +8,34 @@ import os
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Mantenimiento KUKA", page_icon="🤖", layout="wide")
 
-# --- CSS AVANZADO PARA RELOJ HORIZONTAL EN MÓVIL ---
+# --- CSS DEFINITIVO PARA RELOJ HORIZONTAL ---
 st.markdown("""
     <style>
-    /* Evita que las columnas se amontonen en móviles */
+    /* Mantiene las columnas del reloj unidas en una fila en móvil */
     [data-testid="column"] {
         width: fit-content !important;
         flex: unset !important;
         min-width: unset !important;
     }
-    /* Alinea el contenido de la fila de forma horizontal siempre */
     [data-testid="stHorizontalBlock"] {
         align-items: center !important;
-        gap: 0px !important;
+        gap: 5px !important;
+        display: flex !important;
+        flex-direction: row !important;
     }
-    /* Ajuste para los inputs numéricos pequeños */
+    /* Estiliza los cuadros numéricos para que parezcan reloj */
     .stNumberInput input {
-        width: 70px !important;
-        font-size: 18px !important;
+        width: 65px !important;
+        height: 45px !important;
+        font-size: 20px !important;
+        font-weight: bold !important;
         text-align: center !important;
+        border-radius: 8px !important;
     }
-    /* Estilo de los dos puntos */
     .reloj-sep {
-        padding: 0 10px;
-        font-size: 24px;
+        font-size: 28px;
         font-weight: bold;
-        line-height: 1;
+        padding-bottom: 5px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -78,12 +80,11 @@ if menu == "📝 Nuevo Reporte":
     with col_t:
         st.subheader("Reporte de fallas de mantenimiento")
 
-    with st.form("form_reporte"):
+    with st.form("form_reporte", clear_on_submit=False):
         st.markdown("### 1. Datos Generales")
         id_resp = st.text_input("No. Control Responsable", max_chars=5)
         
-        # Corrección de nombre de columna basada en tu KeyError
-        col_nom = 'NOMBRE' if 'NOMBRE' in df_tecnicos.columns else df_tecnicos.columns[1]
+        col_nom = next((c for c in df_tecnicos.columns if "NOMBRE" in c), df_tecnicos.columns[1] if not df_tecnicos.empty else "NOMBRE")
         lista_tec = df_tecnicos[col_nom].unique().tolist() if not df_tecnicos.empty else []
         apoyo = st.multiselect("Personal de Apoyo", lista_tec)
         turno = st.selectbox("Turno", ["Mañana", "Tarde", "Noche"])
@@ -94,7 +95,6 @@ if menu == "📝 Nuevo Reporte":
         robot = c_u2.text_input("Robot")
         
         st.markdown("### 3. Falla")
-        # Lógica de catálogo dinámica
         col_a = next((c for c in df_catalogo.columns if "AREA" in c), "AREA")
         area_sel = st.selectbox("Área", df_catalogo[col_a].unique() if not df_catalogo.empty else [])
         
@@ -102,7 +102,6 @@ if menu == "📝 Nuevo Reporte":
         df_f = df_catalogo[df_catalogo[col_a] == area_sel] if not df_catalogo.empty else pd.DataFrame()
         tipo_sel = st.selectbox("Tipo de Falla", df_f[col_t].unique() if not df_f.empty else [])
 
-        # Selección de código
         lista_f = ["Sin datos"]
         if not df_f.empty:
             df_final = df_f[df_f[col_t] == tipo_sel]
@@ -113,16 +112,15 @@ if menu == "📝 Nuevo Reporte":
         falla_sel = st.selectbox("Código Específico", lista_f)
 
         st.markdown("### 4. Ejecución")
-        desc = st.text_area("Descripción")
-        acc = st.text_area("Acciones")
+        desc = st.text_area("Descripción (Síntoma)")
+        acc = st.text_area("Acciones Correctivas")
 
-        # --- SECCIÓN DE TIEMPOS MEJORADA ---
+        # --- SECCIÓN DE TIEMPOS (RELOJ DIGITAL) ---
         st.markdown("### 5. Tiempos (24h)")
         ahora = datetime.now()
 
-        # INICIO
         st.write("Hora Inicio:")
-        c_hi, c_si, c_mi = st.columns([2, 1, 2])
+        c_hi, c_si, c_mi = st.columns([1, 1, 1])
         with c_hi:
             h_i = st.number_input("HI", 0, 23, ahora.hour, 1, format="%02d", label_visibility="collapsed")
         with c_si:
@@ -130,9 +128,8 @@ if menu == "📝 Nuevo Reporte":
         with c_mi:
             m_i = st.number_input("MI", 0, 59, ahora.minute, 1, format="%02d", label_visibility="collapsed")
 
-        # FIN
         st.write("Hora Fin:")
-        c_hf, c_sf, c_mf = st.columns([2, 1, 2])
+        c_hf, c_sf, c_mf = st.columns([1, 1, 1])
         with c_hf:
             h_f = st.number_input("HF", 0, 23, ahora.hour, 1, format="%02d", label_visibility="collapsed")
         with c_sf:
@@ -143,14 +140,21 @@ if menu == "📝 Nuevo Reporte":
         enviar = st.form_submit_button("Guardar Reporte", type="primary", use_container_width=True)
 
     if enviar:
-        if not id_resp or not celda:
-            st.error("⚠️ Datos incompletos")
+        # VALIDACIÓN DE TIEMPO
+        t_ini = datetime.combine(date.today(), time(h_i, m_i))
+        t_fin = datetime.combine(date.today(), time(h_f, m_f))
+        
+        # Si la hora de fin es menor a la de inicio, asumimos cambio de día (turno noche)
+        if t_fin < t_ini:
+            t_fin += timedelta(days=1)
+        
+        minutos = int((t_fin - t_ini).total_seconds() / 60)
+
+        if not id_resp or not celda or not robot:
+            st.error("⚠️ Datos incompletos: Asegúrate de llenar ID, Celda y Robot.")
+        elif minutos == 0 and t_ini == t_fin:
+            st.warning("⚠️ La hora de inicio y fin son iguales. ¿Es correcto?")
         else:
-            t_ini = datetime.combine(date.today(), time(h_i, m_i))
-            t_fin = datetime.combine(date.today(), time(h_f, m_f))
-            if t_fin < t_ini: t_fin += timedelta(days=1)
-            minutos = int((t_fin - t_ini).total_seconds() / 60)
-            
             fila = [date.today().isocalendar()[1], date.today().strftime("%Y-%m-%d"), turno, id_resp, 
                     ", ".join(apoyo), celda, robot, falla_sel, "", desc, acc, "", "", "", "", minutos, ""]
             
@@ -158,7 +162,8 @@ if menu == "📝 Nuevo Reporte":
             if h:
                 h.append_row(fila)
                 st.balloons()
-                st.success(f"✅ Guardado: {minutos} min")
+                st.success(f"✅ Reporte guardado con éxito. Tiempo total: {minutos} minutos.")
 
 elif menu == "📊 Estadísticas":
-    st.title("📊 Indicadores")
+    st.title("📊 Indicadores de Mantenimiento")
+    # (El código de estadísticas se mantiene igual)
