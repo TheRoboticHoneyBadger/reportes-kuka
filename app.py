@@ -143,15 +143,16 @@ if menu == "📝 Nuevo Reporte":
         acciones = st.text_area("Acciones Correctivas / Actividad")
         solucion = st.text_area("Solución Final")
 
-        # --- SECCIÓN 5: TIEMPOS ---
+    # --- SECCIÓN 5: TIEMPOS (ACTUALIZADO) ---
         st.subheader("5. Tiempos")
         t1, t2 = st.columns(2)
-        h_inicio = t1.time_input("Hora Inicio", datetime.now().time())
-        h_fin = t2.time_input("Hora Fin", datetime.now().time())
+        
+        # Al agregar step=60, permitimos seleccionar minuto a minuto
+        # en lugar de intervalos de 15 minutos.
+        h_inicio = t1.time_input("Hora Inicio", value=datetime.now().time(), step=60)
+        h_fin = t2.time_input("Hora Fin", value=datetime.now().time(), step=60)
         
         comentario = st.text_input("Comentario Adicional")
-
-        enviar = st.form_submit_button("Guardar Reporte", type="primary")
 
     if enviar:
         if not responsable:
@@ -236,5 +237,6 @@ elif menu == "📊 Estadísticas":
         else:
 
             st.info("Sin datos.")
+
 
 
