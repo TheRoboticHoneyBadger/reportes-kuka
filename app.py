@@ -22,8 +22,7 @@ def conectar_google_sheet():
 def cargar_datos():
     try:
         df_cat = pd.read_csv('catalogo_fallas.csv')
-        # Forzamos texto para evitar errores de tipo
-        df_cat = df_cat.astype(str)
+        df_cat = df_cat.astype(str) # Forzamos texto
         df_tec = pd.read_csv('tecnicos.csv', dtype={'ID': str})
         return df_cat, df_tec
     except:
@@ -59,10 +58,10 @@ if menu == "📝 Nuevo Reporte":
             else:
                 c1.error("❌ ID no encontrado")
         
-        # Personal de Apoyo (Multiselección)
+        # Personal de Apoyo
         lista_nombres = df_tecnicos['Nombre'].unique().tolist() if not df_tecnicos.empty else []
         apoyo_seleccionado = c2.multiselect("Personal de Apoyo", lista_nombres)
-        apoyo = ", ".join(apoyo_seleccionado) # Convertir lista a texto
+        apoyo = ", ".join(apoyo_seleccionado)
         
         turno = c3.selectbox("Turno", ["Mañana", "Tarde", "Noche"])
 
@@ -81,7 +80,6 @@ if menu == "📝 Nuevo Reporte":
         
         col_cat1, col_cat2 = st.columns(2)
         
-        # Filtros
         areas = df_catalogo['AREA'].unique() if not df_catalogo.empty else []
         area_sel = col_cat1.selectbox("Área", areas)
         
@@ -91,16 +89,13 @@ if menu == "📝 Nuevo Reporte":
             tipos = df_filtrado_area['TIPO'].unique()
         tipo_sel = col_cat2.selectbox("Tipo de Falla", tipos)
 
-        # Selección Final Limpia
         lista_opciones = ["Sin datos"]
         if not df_catalogo.empty and len(tipos) > 0:
             df_final = df_filtrado_area[df_filtrado_area['TIPO'] == tipo_sel]
-            # Formato: "CODIGO - SUB MODO"
             lista_opciones = df_final['CODIGO DE FALLO'] + " - " + df_final['SUB MODO DE FALLA']
         
         seleccion_completa = st.selectbox("Seleccione el Código Específico", lista_opciones)
         
-        # Lógica de guardado
         codigo_guardar = ""
         falla_guardar = ""
         if " - " in seleccion_completa:
@@ -117,28 +112,22 @@ if menu == "📝 Nuevo Reporte":
         acciones = st.text_area("Acciones Correctivas / Actividad")
         solucion = st.text_area("Solución Final")
 
-        # --- SECCIÓN 5: TIEMPOS (MINUTO A MINUTO) ---
+        # --- SECCIÓN 5: TIEMPOS ---
         st.subheader("5. Tiempos")
         t1, t2 = st.columns(2)
-        # step=60 permite seleccionar minutos exactos
         h_inicio = t1.time_input("Hora Inicio", value=datetime.now().time(), step=60)
         h_fin = t2.time_input("Hora Fin", value=datetime.now().time(), step=60)
         
         comentario = st.text_input("Comentario Adicional")
 
-        # Botón (Dentro del formulario)
         enviar = st.form_submit_button("Guardar Reporte", type="primary")
 
-    # --- LÓGICA DE ENVÍO (FUERA DEL FORMULARIO) ---
     if enviar:
-        # Aquí estaba tu error de indentación. Fíjate que este 'if' está pegado a la izquierda.
         if not responsable:
-            # Y este bloque tiene 4 espacios hacia adentro.
             st.error("⚠️ Falta validar al Responsable.")
         elif not celda or not robot:
             st.warning("⚠️ Indica Celda y Robot.")
         else:
-            # Cálculos
             fecha_hoy = date.today()
             semana = fecha_hoy.isocalendar()[1]
             dt_ini = datetime.combine(fecha_hoy, h_inicio)
@@ -146,25 +135,10 @@ if menu == "📝 Nuevo Reporte":
             if dt_fin < dt_ini: dt_fin += timedelta(days=1)
             tiempo_muerto = int((dt_fin - dt_ini).total_seconds() / 60)
 
-            # Fila a guardar (17 Columnas)
             fila = [
-                semana,
-                fecha_hoy.strftime("%Y-%m-%d"),
-                turno,
-                responsable,
-                apoyo,
-                celda,
-                robot,
-                codigo_guardar,
-                falla_guardar,
-                desc_trabajo,
-                acciones,
-                solucion,
-                no_orden,
-                tipo_orden,
-                status,
-                tiempo_muerto,
-                comentario
+                semana, fecha_hoy.strftime("%Y-%m-%d"), turno, responsable, apoyo,
+                celda, robot, codigo_guardar, falla_guardar, desc_trabajo,
+                acciones, solucion, no_orden, tipo_orden, status, tiempo_muerto, comentario
             ]
 
             hoja = conectar_google_sheet()
@@ -185,7 +159,6 @@ elif menu == "📊 Estadísticas":
         if len(data) > 0:
             df = pd.DataFrame(data)
             
-            # Limpieza de datos
             if 'TIEMPO MUERTO' in df.columns:
                 df['TIEMPO MUERTO'] = pd.to_numeric(df['TIEMPO MUERTO'], errors='coerce').fillna(0)
                 total_tm = df['TIEMPO MUERTO'].sum()
@@ -197,6 +170,19 @@ elif menu == "📊 Estadísticas":
             k2.metric("Tiempo Muerto Total", f"{int(total_tm)} min")
             k3.metric("Semana Actual", date.today().isocalendar()[1])
             
+            # --- AQUÍ ESTABA EL ERROR DE SINTAXIS ---
             tab1, tab2 = st.tabs(["Por Robot", "Por Falla"])
             
-            with tab
+            with tab1: # Fíjate que ahora dice 'tab1' y tiene los dos puntos ':'
+                if 'ROBOT' in df.columns:
+                    fig = px.bar(df, x='ROBOT', y='TIEMPO MUERTO', color='CELDA', title="Tiempo Muerto por Robot")
+                    st.plotly_chart(fig, use_container_width=True)
+            
+            with tab2: # Y aquí 'tab2' con dos puntos ':'
+                if 'CODIGO DE FALLO' in df.columns:
+                    fig2 = px.pie(df, names='CODIGO DE FALLO', title="Códigos Recurrentes")
+                    st.plotly_chart(fig2, use_container_width=True)
+
+            st.dataframe(df.tail(5))
+        else:
+            st.info("Esperando datos...")
