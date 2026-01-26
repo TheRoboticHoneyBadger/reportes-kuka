@@ -22,7 +22,10 @@ def conectar_google_sheet():
 def cargar_datos():
     try:
         df_cat = pd.read_csv('catalogo_fallas.csv')
-        df_cat = df_cat.astype(str) # Forzamos texto
+        # Limpiamos espacios en los nombres de las columnas por si acaso
+        df_cat.columns = df_cat.columns.str.strip()
+        df_cat = df_cat.astype(str) # Forzamos todo a texto
+        
         df_tec = pd.read_csv('tecnicos.csv', dtype={'ID': str})
         return df_cat, df_tec
     except:
@@ -80,6 +83,7 @@ if menu == "📝 Nuevo Reporte":
         
         col_cat1, col_cat2 = st.columns(2)
         
+        # Filtros
         areas = df_catalogo['AREA'].unique() if not df_catalogo.empty else []
         area_sel = col_cat1.selectbox("Área", areas)
         
@@ -92,6 +96,8 @@ if menu == "📝 Nuevo Reporte":
         lista_opciones = ["Sin datos"]
         if not df_catalogo.empty and len(tipos) > 0:
             df_final = df_filtrado_area[df_filtrado_area['TIPO'] == tipo_sel]
+            # Creamos la lista combinando Código y Sub Modo
+            # Asegúrate que en tu CSV la columna se llame exactamente 'SUB MODO DE FALLA'
             lista_opciones = df_final['CODIGO DE FALLO'] + " - " + df_final['SUB MODO DE FALLA']
         
         seleccion_completa = st.selectbox("Seleccione el Código Específico", lista_opciones)
@@ -120,8 +126,10 @@ if menu == "📝 Nuevo Reporte":
         
         comentario = st.text_input("Comentario Adicional")
 
+        # --- BOTÓN DE ENVÍO (DENTRO DEL FORMULARIO) ---
         enviar = st.form_submit_button("Guardar Reporte", type="primary")
 
+    # --- LÓGICA FUERA DEL FORMULARIO ---
     if enviar:
         if not responsable:
             st.error("⚠️ Falta validar al Responsable.")
@@ -170,15 +178,15 @@ elif menu == "📊 Estadísticas":
             k2.metric("Tiempo Muerto Total", f"{int(total_tm)} min")
             k3.metric("Semana Actual", date.today().isocalendar()[1])
             
-            # --- AQUÍ ESTABA EL ERROR DE SINTAXIS ---
+            # --- AQUÍ ESTABA EL ERROR, YA CORREGIDO ---
             tab1, tab2 = st.tabs(["Por Robot", "Por Falla"])
             
-            with tab1: # Fíjate que ahora dice 'tab1' y tiene los dos puntos ':'
+            with tab1:
                 if 'ROBOT' in df.columns:
                     fig = px.bar(df, x='ROBOT', y='TIEMPO MUERTO', color='CELDA', title="Tiempo Muerto por Robot")
                     st.plotly_chart(fig, use_container_width=True)
             
-            with tab2: # Y aquí 'tab2' con dos puntos ':'
+            with tab2:
                 if 'CODIGO DE FALLO' in df.columns:
                     fig2 = px.pie(df, names='CODIGO DE FALLO', title="Códigos Recurrentes")
                     st.plotly_chart(fig2, use_container_width=True)
