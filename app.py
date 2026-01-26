@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, date, timedelta, time
 import gspread
 import plotly.express as px
+import os # Para verificar si existe el logo
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Mantenimiento KUKA", page_icon="🤖", layout="wide")
@@ -17,29 +18,22 @@ def conectar_google_sheet():
         st.error(f"Error de conexión: {e}")
         return None
 
-# --- FUNCIÓN INTELIGENTE PARA LEER NÚMEROS COMO HORA ---
+# --- FUNCIÓN INTELIGENTE PARA LEER HORA ---
 def interpretar_numero(numero_input):
-    """Convierte un número entero (ej: 2145) en una hora (21:45)."""
     if numero_input is None:
         return datetime.now().time()
     
-    # Convertimos el número a texto (ej: 2145 -> "2145")
-    texto = str(int(numero_input)).zfill(4) # Rellena con ceros si es necesario (ej: 900 -> 0900)
-    
+    texto = str(int(numero_input)).zfill(4)
     try:
-        # Tomamos los primeros 2 dígitos como Hora y los últimos 2 como Minutos
         horas = int(texto[:2])
         minutos = int(texto[2:])
-        
-        # Validaciones básicas
         if horas > 23: horas = 23
         if minutos > 59: minutos = 59
-            
         return time(horas, minutos)
     except:
         return datetime.now().time()
 
-# --- CARGA DE DATOS LOCALES ---
+# --- CARGA DE DATOS ---
 @st.cache_data
 def cargar_datos():
     try:
@@ -61,12 +55,24 @@ menu = st.sidebar.radio("Ir a:", ["📝 Nuevo Reporte", "📊 Estadísticas"])
 # 📝 SECCIÓN: REPORTE DE FALLAS
 # ==========================================
 if menu == "📝 Nuevo Reporte":
-    st.title("📝 Reporte de Mantenimiento")
+    
+    # --- LOGO ENCABEZADO ---
+    col_logo, col_titulo = st.columns([1, 4])
+    with col_logo:
+        # Intenta cargar 'logo.png' si existe, si no, usa un icono online
+        if os.path.exists("logo.png"):
+            st.image("logo.png", width=100)
+        else:
+            # Logo genérico por si no has subido el tuyo
+            st.image("https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=80)
+    with col_titulo:
+        st.title("Reporte KUKA")
+
     st.markdown("---")
 
     with st.form("form_reporte"):
         
-        # --- SECCIÓN 1: DATOS GENERALES ---
+        # --- 1. DATOS GENERALES ---
         st.subheader("1. Datos Generales")
         c1, c2, c3 = st.columns(3)
         
@@ -86,19 +92,17 @@ if menu == "📝 Nuevo Reporte":
         
         turno = c3.selectbox("Turno", ["Mañana", "Tarde", "Noche"])
 
-        # --- SECCIÓN 2: UBICACIÓN Y ORDEN ---
+        # --- 2. UBICACIÓN Y ORDEN ---
         st.subheader("2. Ubicación y Orden")
         u1, u2, u3, u4, u5 = st.columns(5)
-        
         celda = u1.text_input("Celda")
         robot = u2.text_input("Robot")
         no_orden = u3.text_input("No. de Orden")
         tipo_orden = u4.selectbox("Tipo de Orden", ["Correctivo", "Preventivo", "Mejora", "Falla Menor"])
         status = u5.selectbox("Status", ["Cerrada", "Abierta", "Pendiente de Refacción"])
 
-        # --- SECCIÓN 3: DETALLE DE LA FALLA ---
+        # --- 3. DETALLE DE LA FALLA ---
         st.subheader("3. Detalle de la Falla")
-        
         col_cat1, col_cat2 = st.columns(2)
         
         col_area = next((c for c in df_catalogo.columns if "AREA" in c), df_catalogo.columns[0] if not df_catalogo.empty else "None")
@@ -107,7 +111,6 @@ if menu == "📝 Nuevo Reporte":
         
         tipos = []
         col_tipo = next((c for c in df_catalogo.columns if "TIPO" in c), df_catalogo.columns[1] if not df_catalogo.empty else "None")
-        
         if not df_catalogo.empty:
             df_filtrado_area = df_catalogo[df_catalogo[col_area] == area_sel]
             tipos = df_filtrado_area[col_tipo].unique()
@@ -116,7 +119,6 @@ if menu == "📝 Nuevo Reporte":
         lista_opciones = ["Sin datos"]
         col_codigo = "None"
         col_submodo = "None"
-
         if not df_catalogo.empty and len(tipos) > 0:
             df_final = df_filtrado_area[df_filtrado_area[col_tipo] == tipo_sel]
             col_codigo = next((c for c in df_final.columns if "CODIGO" in c), df_final.columns[2])
@@ -135,32 +137,34 @@ if menu == "📝 Nuevo Reporte":
             codigo_guardar = seleccion_completa
             falla_guardar = seleccion_completa
 
-        # --- SECCIÓN 4: TRABAJO REALIZADO ---
+        # --- 4. EJECUCIÓN ---
         st.subheader("4. Ejecución")
         desc_trabajo = st.text_area("Descripción del Trabajo (Síntoma)")
         acciones = st.text_area("Acciones Correctivas / Actividad")
         solucion = st.text_area("Solución Final")
 
-        # --- SECCIÓN 5: TIEMPOS (TECLADO NUMÉRICO) ---
+        # --- 5. TIEMPOS (VELOCIDAD + VISTA PREVIA) ---
         st.subheader("5. Tiempos")
-        st.caption("Escribe la hora en formato 24h sin dos puntos (Ej: escribe 1430 para las 14:30)")
-        
         t1, t2 = st.columns(2)
         
-        # Obtenemos hora actual como número (ej: 1430)
+        # Hora Actual por defecto
         ahora = datetime.now()
         valor_defecto = int(ahora.strftime("%H%M"))
         
         with t1:
-            # step=1 y format="%d" fuerzan el teclado numérico
-            num_ini = st.number_input("Hora Inicio", value=valor_defecto, step=1, min_value=0, max_value=2359, format="%d")
+            st.markdown("**(1) Hora Inicio** (Ej: 1430)")
+            num_ini = st.number_input("Ingresa Hora Inicio", value=valor_defecto, step=1, label_visibility="collapsed")
+            # VISTA PREVIA VISUAL
+            h_inicio = interpretar_numero(num_ini)
+            st.caption(f"🕒 **{h_inicio.strftime('%H:%M')}**") # Aquí aparecen los dos puntos
+
         with t2:
-            num_fin = st.number_input("Hora Fin", value=valor_defecto, step=1, min_value=0, max_value=2359, format="%d")
-            
-        # Convertimos esos números a objetos de tiempo reales para el cálculo
-        h_inicio = interpretar_numero(num_ini)
-        h_fin = interpretar_numero(num_fin)
-        
+            st.markdown("**(2) Hora Fin** (Ej: 1500)")
+            num_fin = st.number_input("Ingresa Hora Fin", value=valor_defecto, step=1, label_visibility="collapsed")
+            # VISTA PREVIA VISUAL
+            h_fin = interpretar_numero(num_fin)
+            st.caption(f"🕒 **{h_fin.strftime('%H:%M')}**") # Aquí aparecen los dos puntos
+
         comentario = st.text_input("Comentario Adicional")
 
         enviar = st.form_submit_button("Guardar Reporte", type="primary")
@@ -195,6 +199,11 @@ if menu == "📝 Nuevo Reporte":
 # ==========================================
 elif menu == "📊 Estadísticas":
     st.title("📊 Indicadores")
+    
+    # Logo también en estadísticas
+    if os.path.exists("logo.png"):
+        st.image("logo.png", width=80)
+        
     hoja = conectar_google_sheet()
     
     if hoja:
