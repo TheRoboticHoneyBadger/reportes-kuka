@@ -4,39 +4,35 @@ from datetime import datetime, date, timedelta, time
 import gspread
 import os
 
-# --- CONFIGURACIÓN E INTERFAZ ---
+# --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="KUKA Mantenimiento", page_icon="🤖", layout="centered")
 
-# CSS PERSONALIZADO PARA FIJAR EL DISEÑO EN MÓVIL
+# CSS PARA FORZAR ALINEACIÓN Y DISEÑO MÓVIL
 st.markdown("""
     <style>
-    /* Estilo para el contenedor del reloj digital */
-    .reloj-container {
-        display: flex;
-        align-items: center;
-        justify-content: flex-start;
-        gap: 10px;
-        margin-bottom: 20px;
+    /* Forzar que las columnas de la hora no se apilen en el celular */
+    [data-testid="column"] {
+        width: fit-content !important;
+        flex: unset !important;
+        min-width: 50px !important;
     }
-    .reloj-input {
-        width: 80px !important;
+    [data-testid="stHorizontalBlock"] {
+        align-items: center !important;
+        gap: 5px !important;
     }
-    .reloj-sep {
-        font-size: 28px;
+    .stNumberInput div div input {
+        padding: 5px !important;
+        font-size: 18px !important;
+    }
+    .titulo-form {
+        color: #1E3A8A;
         font-weight: bold;
-        padding-top: 5px;
-    }
-    /* Hacer el botón de guardar más grande para el pulgar */
-    .stButton > button {
-        width: 100%;
-        height: 60px;
-        font-size: 20px !important;
-        font-weight: bold;
+        margin-bottom: 0px;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- CONEXIÓN A DATOS ---
+# --- CONEXIÓN A GOOGLE SHEETS ---
 def conectar_google_sheet():
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
@@ -45,8 +41,9 @@ def conectar_google_sheet():
     except:
         return None
 
+# --- CARGA DE DATOS ---
 @st.cache_data
-def cargar_catalogos():
+def cargar_datos():
     try:
         df_cat = pd.read_csv('catalogo_fallas.csv')
         df_cat.columns = df_cat.columns.str.strip().str.upper()
@@ -56,120 +53,105 @@ def cargar_catalogos():
     except:
         return pd.DataFrame(), pd.DataFrame()
 
-df_catalogo, df_tecnicos = cargar_catalogos()
+df_catalogo, df_tecnicos = cargar_datos()
 
-# --- LOGO Y TÍTULO ---
-col_l, col_t = st.columns([1, 4])
-with col_l:
-    st.image("logo.png" if os.path.exists("logo.png") else "https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=70)
-with col_t:
-    st.subheader("Reporte de fallas de mantenimiento")
+# --- ENCABEZADO ---
+col_logo, col_tit = st.columns([1, 4])
+with col_logo:
+    st.image("logo.png" if os.path.exists("logo.png") else "https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=60)
+with col_tit:
+    st.markdown("<h2 class='titulo-form'>Reporte de fallas de mantenimiento</h2>", unsafe_allow_html=True)
 
-# --- FORMULARIO ---
-with st.form("form_final"):
-    # 1. PERSONAL
-    st.info("👤 Personal")
-    id_resp = st.text_input("No. Control Responsable", max_chars=5)
+# --- FORMULARIO PRINCIPAL ---
+with st.form("form_mantenimiento"):
+    
+    # 1. IDENTIFICACIÓN
+    st.markdown("#### 👤 Responsable")
+    id_resp = st.text_input("No. Control Responsable", max_chars=5, help="Ingresa tu número de nómina")
     
     nombres_tec = df_tecnicos['NOMBRE'].tolist() if not df_tecnicos.empty else []
     apoyo = st.multiselect("Personal de Apoyo", nombres_tec)
-    turno = st.select_slider("Turno", options=["Mañana", "Tarde", "Noche"])
+    turno = st.selectbox("Turno", ["Mañana", "Tarde", "Noche"])
 
-    # 2. UBICACIÓN
-    st.info("📍 Ubicación")
-    c1, c2 = st.columns(2)
-    celda = c1.text_input("Celda")
-    robot = c2.text_input("Robot")
+    # 2. LOCALIZACIÓN
+    st.markdown("#### 📍 Ubicación")
+    c_loc1, c_loc2 = st.columns(2)
+    celda = c_loc1.text_input("Celda")
+    robot = c_loc2.text_input("Robot")
     
-    # 3. FALLA (FILTRADO INTELIGENTE)
-    st.info("📋 Detalle de Falla")
-    area_col = next((c for c in df_catalogo.columns if "AREA" in c), "AREA")
-    tipo_col = next((c for c in df_catalogo.columns if "TIPO" in c), "TIPO")
+    # 3. FALLA
+    st.markdown("#### 📋 Detalle de la Falla")
+    # Buscamos nombres de columnas
+    col_a = next((c for c in df_catalogo.columns if "AREA" in c), "AREA")
+    col_t = next((c for c in df_catalogo.columns if "TIPO" in c), "TIPO")
     
-    areas = df_catalogo[area_col].unique() if not df_catalogo.empty else []
+    areas = df_catalogo[col_a].unique() if not df_catalogo.empty else []
     area_sel = st.selectbox("Área", areas)
     
-    filtro_tipo = df_catalogo[df_catalogo[area_col] == area_sel][tipo_col].unique() if not df_catalogo.empty else []
-    tipo_sel = st.selectbox("Tipo de Falla", filtro_tipo)
+    tipos = df_catalogo[df_catalogo[col_a] == area_sel][col_t].unique() if not df_catalogo.empty else []
+    tipo_sel = st.selectbox("Tipo de Falla", tipos)
 
-    # Selección de código final
-    df_f = df_catalogo[(df_catalogo[area_col] == area_sel) & (df_catalogo[tipo_col] == tipo_sel)]
-    cod_col = next((c for c in df_f.columns if "CODIGO" in c), df_f.columns[0] if not df_f.empty else "")
-    desc_col = next((c for c in df_f.columns if "SUB" in c or "MODO" in c or "DESC" in c), df_f.columns[-1] if not df_f.empty else "")
+    # Filtrado final de códigos
+    df_f = df_catalogo[(df_catalogo[col_a] == area_sel) & (df_catalogo[col_t] == tipo_sel)]
+    col_c = next((c for c in df_f.columns if "CODIGO" in c), df_f.columns[0])
+    col_d = next((c for c in df_f.columns if "SUB" in c or "MODO" in c or "DESC" in c), df_f.columns[-1])
     
-    opciones = (df_f[cod_col] + " - " + df_f[desc_col]).tolist() if not df_f.empty else ["Sin datos"]
-    falla_final = st.selectbox("Código Específico", opciones)
+    opciones_falla = (df_f[col_c] + " - " + df_f[col_d]).tolist() if not df_f.empty else ["Sin datos"]
+    seleccion_falla = st.selectbox("Código Específico", opciones_falla)
 
-    # 4. TRABAJO
-    st.info("🛠️ Ejecución")
+    # 4. EJECUCIÓN
+    st.markdown("#### 🛠️ Trabajo Realizado")
     sintoma = st.text_area("Descripción / Síntoma")
     accion = st.text_area("Acción Correctiva")
 
-    # 5. TIEMPOS (RELOJ DIGITAL COMPACTO)
-    st.info("⏱️ Tiempos (Formato 24h)")
+    # 5. TIEMPOS (RELOJ DIGITAL HORIZONTAL PROTEGIDO)
+    st.markdown("#### ⏱️ Tiempos (Formato 24h)")
     ahora = datetime.now()
 
-    # INICIO
-    st.write("Hora Inicio:")
-    c_h1, c_s1, c_m1, c_sp1 = st.columns([2, 1, 2, 5])
-    with c_h1:
-        h_i = st.number_input("HI", 0, 23, ahora.hour, key="hi", label_visibility="collapsed")
-    with c_s1:
-        st.markdown('<p class="reloj-sep">:</p>', unsafe_allow_html=True)
-    with c_m1:
-        m_i = st.number_input("MI", 0, 59, ahora.minute, key="mi", label_visibility="collapsed")
+    # Función para crear la fila del reloj
+    def fila_reloj(label, key_h, key_m):
+        st.write(label)
+        # Columnas extremadamente estrechas para forzar la horizontalidad
+        c_h, c_sep, c_m = st.columns([1, 0.2, 1])
+        with c_h:
+            h = st.number_input("H", 0, 23, ahora.hour, key=key_h, label_visibility="collapsed", format="%02d")
+        with c_sep:
+            st.markdown("<h3 style='margin:0'>:</h3>", unsafe_allow_html=True)
+        with c_m:
+            m = st.number_input("M", 0, 59, ahora.minute, key=key_m, label_visibility="collapsed", format="%02d")
+        return h, m
 
-    # FIN
-    st.write("Hora Fin:")
-    c_h2, c_s2, c_m2, c_sp2 = st.columns([2, 1, 2, 5])
-    with c_h2:
-        h_f = st.number_input("HF", 0, 23, ahora.hour, key="hf", label_visibility="collapsed")
-    with c_s2:
-        st.markdown('<p class="reloj-sep">:</p>', unsafe_allow_html=True)
-    with c_m2:
-        m_f = st.number_input("MF", 0, 59, ahora.minute, key="mf", label_visibility="collapsed")
+    h_ini, m_ini = fila_reloj("Hora Inicio:", "hi", "mi")
+    h_fin, m_fin = fila_reloj("Hora Fin:", "hf", "mf")
 
-    # BOTÓN
-    guardar = st.form_submit_button("GUARDAR REPORTE")
+    st.markdown("---")
+    enviar = st.form_submit_button("💾 GUARDAR REPORTE", type="primary", use_container_width=True)
 
 # --- LÓGICA DE GUARDADO ---
-if guardar:
-    if not id_resp or not celda or not robot:
-        st.error("⚠️ Llena ID, Celda y Robot.")
+if enviar:
+    if not id_resp or not celda:
+        st.error("⚠️ Falta ID de Responsable o Celda")
     else:
-        # Calcular tiempo muerto
-        t_inicio = time(h_i, m_i)
-        t_fin = time(h_f, m_f)
-        dt_i = datetime.combine(date.today(), t_inicio)
-        dt_f = datetime.combine(date.today(), t_fin)
+        # Procesamiento de tiempos
+        t_i = time(h_ini, m_ini)
+        t_f = time(h_fin, m_fin)
+        dt_i = datetime.combine(date.today(), t_i)
+        dt_f = datetime.combine(date.today(), t_f)
         if dt_f < dt_i: dt_f += timedelta(days=1)
-        minutos = int((dt_f - dt_i).total_seconds() / 60)
+        duracion = int((dt_f - dt_i).total_seconds() / 60)
 
-        # Buscar nombre del técnico para el reporte
-        nombre_resp = df_tecnicos[df_tecnicos['ID'] == id_resp]['NOMBRE'].iloc[0] if id_resp in df_tecnicos['ID'].values else id_resp
+        nombre_tec = df_tecnicos[df_tecnicos['ID'] == id_resp]['NOMBRE'].iloc[0] if id_resp in df_tecnicos['ID'].values else id_resp
 
-        # Preparar fila
-        fila = [
+        fila_datos = [
             date.today().isocalendar()[1], # Semana
             date.today().strftime("%Y-%m-%d"), # Fecha
-            turno,
-            nombre_resp,
-            ", ".join(apoyo),
-            celda,
-            robot,
-            falla_final,
-            "", # Espacio para descripción extra si se requiere
-            sintoma,
-            accion,
-            "", "", "", "", # Columnas vacías para compatibilidad
-            minutos,
-            ""
+            turno, nombre_tec, ", ".join(apoyo),
+            celda, robot, seleccion_falla, "", sintoma, accion,
+            "", "", "", "", duracion, ""
         ]
 
         hoja = conectar_google_sheet()
         if hoja:
-            hoja.append_row(fila)
+            hoja.append_row(fila_datos)
             st.balloons()
-            st.success(f"✅ Reporte guardado. Tiempo Muerto: {minutos} min")
-        else:
-            st.error("❌ Error de conexión con Google Sheets")
+            st.success(f"✅ Guardado correctamente. Tiempo muerto: {duracion} min")
