@@ -87,7 +87,7 @@ if menu == "📝 Nuevo Reporte":
         tipo_orden = u4.selectbox("Tipo de Orden", ["Correctivo", "Preventivo", "Mejora", "Falla Menor"])
         status = u5.selectbox("Status", ["Cerrada", "Abierta", "Pendiente de Refacción"])
 
-        # --- SECCIÓN 3: DETALLE DE LA FALLA (ACTUALIZADO) ---
+        # --- SECCIÓN 3: DETALLE DE LA FALLA (VISUALIZACIÓN LIMPIA) ---
         st.subheader("3. Detalle de la Falla")
         
         col_cat1, col_cat2 = st.columns(2)
@@ -96,35 +96,37 @@ if menu == "📝 Nuevo Reporte":
         areas = df_catalogo['AREA'].unique() if not df_catalogo.empty else []
         area_sel = col_cat1.selectbox("Área", areas)
         
-        # 2. Filtro por TIPO (Depende del Area)
+        # 2. Filtro por TIPO
         tipos = []
         if not df_catalogo.empty:
             df_filtrado_area = df_catalogo[df_catalogo['AREA'] == area_sel]
             tipos = df_filtrado_area['TIPO'].unique()
         tipo_sel = col_cat2.selectbox("Tipo de Falla", tipos)
 
-        # 3. Selección Final (Depende del Tipo)
+        # 3. Selección Final (Solo CÓDIGO y DESCRIPCIÓN)
         lista_opciones = ["Sin datos"]
         if not df_catalogo.empty and len(tipos) > 0:
             df_final = df_filtrado_area[df_filtrado_area['TIPO'] == tipo_sel]
-            # Creamos una etiqueta visual: "CODIGO | FALLA (SUB MODO)"
-            lista_opciones = df_final['CODIGO DE FALLO'] + " | " + df_final['FALLA EN EQUIPO'] + " (" + df_final['SUB MODO DE FALLA'] + ")"
+            
+            # AQUI ESTÁ EL CAMBIO: Concatenamos solo "CODIGO - SUB MODO"
+            # Asumiendo que 'SUB MODO DE FALLA' es la descripción específica que quieres ver
+            lista_opciones = df_final['CODIGO DE FALLO'] + " - " + df_final['SUB MODO DE FALLA']
         
         seleccion_completa = st.selectbox("Seleccione el Código Específico", lista_opciones)
         
-        # Lógica para separar el texto y guardar solo lo necesario
+        # Lógica para separar y guardar (Actualizada para el nuevo formato con guión)
         codigo_guardar = ""
         falla_guardar = ""
         
-        if " | " in seleccion_completa:
-            partes = seleccion_completa.split(" | ")
+        if " - " in seleccion_completa:
+            # Separamos por el primer guión que encontremos
+            partes = seleccion_completa.split(" - ", 1)
             codigo_guardar = partes[0]
-            # Quitamos el submodo del nombre de la falla para que quede limpio en el Excel
-            falla_guardar = partes[1].split(" (")[0] 
+            falla_guardar = partes[1] # Esto guardará la descripción específica
         else:
             codigo_guardar = seleccion_completa
             falla_guardar = seleccion_completa
-
+            
         # --- SECCIÓN 4: TRABAJO REALIZADO ---
         st.subheader("4. Ejecución")
         desc_trabajo = st.text_area("Descripción del Trabajo (Síntoma)")
@@ -224,3 +226,4 @@ elif menu == "📊 Estadísticas":
         else:
 
             st.info("Sin datos.")
+
