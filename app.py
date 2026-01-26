@@ -3,7 +3,6 @@ import pandas as pd
 from datetime import datetime, date, timedelta, time
 import gspread
 import plotly.express as px
-import re # Librería para entender el texto de la hora
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Mantenimiento KUKA", page_icon="🤖", layout="wide")
@@ -18,28 +17,25 @@ def conectar_google_sheet():
         st.error(f"Error de conexión: {e}")
         return None
 
-# --- FUNCIÓN INTELIGENTE PARA LEER LA HORA ---
-def interpretar_hora(texto_input):
-    """Convierte texto como '1430', '14:30' o '14.30' en una hora real."""
-    if not texto_input:
+# --- FUNCIÓN INTELIGENTE PARA LEER NÚMEROS COMO HORA ---
+def interpretar_numero(numero_input):
+    """Convierte un número entero (ej: 2145) en una hora (21:45)."""
+    if numero_input is None:
         return datetime.now().time()
     
-    # Limpiamos el texto (quitamos espacios)
-    texto = str(texto_input).strip().replace(".", ":").replace(",", ":")
+    # Convertimos el número a texto (ej: 2145 -> "2145")
+    texto = str(int(numero_input)).zfill(4) # Rellena con ceros si es necesario (ej: 900 -> 0900)
     
     try:
-        if ":" in texto:
-            # Formato 14:30
-            h, m = texto.split(":")
-            return time(int(h), int(m))
-        elif len(texto) == 4:
-            # Formato 1430
-            return time(int(texto[:2]), int(texto[2:]))
-        elif len(texto) <= 2:
-            # Formato 14 (Asume 14:00)
-            return time(int(texto), 0)
-        else:
-            return datetime.now().time()
+        # Tomamos los primeros 2 dígitos como Hora y los últimos 2 como Minutos
+        horas = int(texto[:2])
+        minutos = int(texto[2:])
+        
+        # Validaciones básicas
+        if horas > 23: horas = 23
+        if minutos > 59: minutos = 59
+            
+        return time(horas, minutos)
     except:
         return datetime.now().time()
 
@@ -48,11 +44,8 @@ def interpretar_hora(texto_input):
 def cargar_datos():
     try:
         df_cat = pd.read_csv('catalogo_fallas.csv')
-        # LIMPIEZA EXTREMA DE COLUMNAS
-        # Convierte todo a mayúsculas y quita espacios extraños
         df_cat.columns = df_cat.columns.str.strip().str.upper()
         df_cat = df_cat.astype(str)
-        
         df_tec = pd.read_csv('tecnicos.csv', dtype={'ID': str})
         return df_cat, df_tec
     except:
@@ -103,17 +96,15 @@ if menu == "📝 Nuevo Reporte":
         tipo_orden = u4.selectbox("Tipo de Orden", ["Correctivo", "Preventivo", "Mejora", "Falla Menor"])
         status = u5.selectbox("Status", ["Cerrada", "Abierta", "Pendiente de Refacción"])
 
-        # --- SECCIÓN 3: DETALLE DE LA FALLA (ROBUSTO) ---
+        # --- SECCIÓN 3: DETALLE DE LA FALLA ---
         st.subheader("3. Detalle de la Falla")
         
         col_cat1, col_cat2 = st.columns(2)
         
-        # Buscamos la columna de AREA inteligentemente
         col_area = next((c for c in df_catalogo.columns if "AREA" in c), df_catalogo.columns[0] if not df_catalogo.empty else "None")
         areas = df_catalogo[col_area].unique() if not df_catalogo.empty else []
         area_sel = col_cat1.selectbox("Área", areas)
         
-        # Buscamos la columna de TIPO
         tipos = []
         col_tipo = next((c for c in df_catalogo.columns if "TIPO" in c), df_catalogo.columns[1] if not df_catalogo.empty else "None")
         
@@ -128,12 +119,8 @@ if menu == "📝 Nuevo Reporte":
 
         if not df_catalogo.empty and len(tipos) > 0:
             df_final = df_filtrado_area[df_filtrado_area[col_tipo] == tipo_sel]
-            
-            # Búsqueda inteligente de columnas de Código y Submodo
             col_codigo = next((c for c in df_final.columns if "CODIGO" in c), df_final.columns[2])
-            # Busca columnas que tengan "SUB" o "MODO" o "DESCRIPCION"
             col_submodo = next((c for c in df_final.columns if "SUB" in c or "MODO" in c or "DESC" in c), df_final.columns[-1])
-            
             lista_opciones = df_final[col_codigo] + " - " + df_final[col_submodo]
         
         seleccion_completa = st.selectbox("Seleccione el Código Específico", lista_opciones)
@@ -154,23 +141,25 @@ if menu == "📝 Nuevo Reporte":
         acciones = st.text_area("Acciones Correctivas / Actividad")
         solucion = st.text_area("Solución Final")
 
-        # --- SECCIÓN 5: TIEMPOS (ENTRADA RÁPIDA DE TEXTO) ---
+        # --- SECCIÓN 5: TIEMPOS (TECLADO NUMÉRICO) ---
         st.subheader("5. Tiempos")
-        st.caption("Escribe la hora (Ej: 2145 para las 21:45)")
+        st.caption("Escribe la hora en formato 24h sin dos puntos (Ej: escribe 1430 para las 14:30)")
         
         t1, t2 = st.columns(2)
         
-        # Pre-llenamos con la hora actual
-        hora_actual_str = datetime.now().strftime("%H:%M")
+        # Obtenemos hora actual como número (ej: 1430)
+        ahora = datetime.now()
+        valor_defecto = int(ahora.strftime("%H%M"))
         
         with t1:
-            h_ini_txt = st.text_input("Hora Inicio", value=hora_actual_str, max_chars=5)
+            # step=1 y format="%d" fuerzan el teclado numérico
+            num_ini = st.number_input("Hora Inicio", value=valor_defecto, step=1, min_value=0, max_value=2359, format="%d")
         with t2:
-            h_fin_txt = st.text_input("Hora Fin", value=hora_actual_str, max_chars=5)
+            num_fin = st.number_input("Hora Fin", value=valor_defecto, step=1, min_value=0, max_value=2359, format="%d")
             
-        # Convertimos lo que escribiste en horas reales
-        h_inicio = interpretar_hora(h_ini_txt)
-        h_fin = interpretar_hora(h_fin_txt)
+        # Convertimos esos números a objetos de tiempo reales para el cálculo
+        h_inicio = interpretar_numero(num_ini)
+        h_fin = interpretar_numero(num_fin)
         
         comentario = st.text_input("Comentario Adicional")
 
@@ -212,8 +201,6 @@ elif menu == "📊 Estadísticas":
         data = hoja.get_all_records()
         if len(data) > 0:
             df = pd.DataFrame(data)
-            
-            # Convertimos columnas a Mayúsculas para evitar problemas
             df.columns = df.columns.str.strip().str.upper()
             
             if 'TIEMPO MUERTO' in df.columns:
@@ -231,7 +218,6 @@ elif menu == "📊 Estadísticas":
                 if 'ROBOT' in df.columns:
                     st.plotly_chart(px.bar(df, x='ROBOT', y='TIEMPO MUERTO', color='CELDA'), use_container_width=True)
             with tab2:
-                # Busca columna de código de fallo
                 col_code = next((c for c in df.columns if "CODIGO" in c), None)
                 if col_code:
                     st.plotly_chart(px.pie(df, names=col_code), use_container_width=True)
