@@ -21,28 +21,12 @@ def conectar_google_sheet():
 @st.cache_data
 def cargar_datos():
     try:
-        # Intento 1: Lectura estándar
         df_cat = pd.read_csv('catalogo_fallas.csv')
-        
-        # TRUCO: Si detecta solo 1 columna, seguro es porque el separador es punto y coma (Excel latino)
-        if len(df_cat.columns) < 2:
-            df_cat = pd.read_csv('catalogo_fallas.csv', sep=';', encoding='latin-1')
-
-        # Limpieza CRÍTICA: Quitamos espacios vacíos en los nombres de las columnas
-        # Ejemplo: "AREA " se convierte en "AREA"
-        df_cat.columns = df_cat.columns.str.strip()
-        
-        # Convertimos todo a texto para evitar errores de números
+        # Forzamos texto para evitar errores de tipo
         df_cat = df_cat.astype(str)
-        
-        # Cargamos técnicos
         df_tec = pd.read_csv('tecnicos.csv', dtype={'ID': str})
-        
         return df_cat, df_tec
-
-    except Exception as e:
-        # ESTO ES LO NUEVO: Si falla, te mostrará el error exacto en pantalla roja
-        st.error(f"⚠️ Error cargando archivo: {e}")
+    except:
         return pd.DataFrame(), pd.DataFrame()
 
 df_catalogo, df_tecnicos = cargar_datos()
@@ -64,7 +48,7 @@ if menu == "📝 Nuevo Reporte":
         st.subheader("1. Datos Generales")
         c1, c2, c3 = st.columns(3)
         
-        # Validación de Responsable (Sigue igual, por ID para seguridad)
+        # Validación de Responsable
         id_responsable = c1.text_input("No. Control Responsable", max_chars=5)
         responsable = ""
         if id_responsable and not df_tecnicos.empty:
@@ -75,15 +59,10 @@ if menu == "📝 Nuevo Reporte":
             else:
                 c1.error("❌ ID no encontrado")
         
-        # CAMBIO AQUÍ: Personal de Apoyo ahora es una lista desplegable
-        # 1. Obtenemos la lista de nombres del archivo tecnicos.csv
+        # Personal de Apoyo (Multiselección)
         lista_nombres = df_tecnicos['Nombre'].unique().tolist() if not df_tecnicos.empty else []
-        
-        # 2. Creamos un selector múltiple (puedes elegir uno o varios)
         apoyo_seleccionado = c2.multiselect("Personal de Apoyo", lista_nombres)
-        
-        # 3. Convertimos la lista de seleccionados a un texto simple (ej: "Juan, Pedro") para guardarlo
-        apoyo = ", ".join(apoyo_seleccionado)
+        apoyo = ", ".join(apoyo_seleccionado) # Convertir lista a texto
         
         turno = c3.selectbox("Turno", ["Mañana", "Tarde", "Noche"])
 
@@ -97,65 +76,64 @@ if menu == "📝 Nuevo Reporte":
         tipo_orden = u4.selectbox("Tipo de Orden", ["Correctivo", "Preventivo", "Mejora", "Falla Menor"])
         status = u5.selectbox("Status", ["Cerrada", "Abierta", "Pendiente de Refacción"])
 
-        # --- SECCIÓN 3: DETALLE DE LA FALLA (VISUALIZACIÓN LIMPIA) ---
+        # --- SECCIÓN 3: DETALLE DE LA FALLA ---
         st.subheader("3. Detalle de la Falla")
         
         col_cat1, col_cat2 = st.columns(2)
         
-        # 1. Filtro por AREA
+        # Filtros
         areas = df_catalogo['AREA'].unique() if not df_catalogo.empty else []
         area_sel = col_cat1.selectbox("Área", areas)
         
-        # 2. Filtro por TIPO
         tipos = []
         if not df_catalogo.empty:
             df_filtrado_area = df_catalogo[df_catalogo['AREA'] == area_sel]
             tipos = df_filtrado_area['TIPO'].unique()
         tipo_sel = col_cat2.selectbox("Tipo de Falla", tipos)
 
-        # 3. Selección Final (Solo CÓDIGO y DESCRIPCIÓN)
+        # Selección Final Limpia
         lista_opciones = ["Sin datos"]
         if not df_catalogo.empty and len(tipos) > 0:
             df_final = df_filtrado_area[df_filtrado_area['TIPO'] == tipo_sel]
-            
-            # AQUI ESTÁ EL CAMBIO: Concatenamos solo "CODIGO - SUB MODO"
-            # Asumiendo que 'SUB MODO DE FALLA' es la descripción específica que quieres ver
+            # Formato: "CODIGO - SUB MODO"
             lista_opciones = df_final['CODIGO DE FALLO'] + " - " + df_final['SUB MODO DE FALLA']
         
         seleccion_completa = st.selectbox("Seleccione el Código Específico", lista_opciones)
         
-        # Lógica para separar y guardar (Actualizada para el nuevo formato con guión)
+        # Lógica de guardado
         codigo_guardar = ""
         falla_guardar = ""
-        
         if " - " in seleccion_completa:
-            # Separamos por el primer guión que encontremos
             partes = seleccion_completa.split(" - ", 1)
             codigo_guardar = partes[0]
-            falla_guardar = partes[1] # Esto guardará la descripción específica
+            falla_guardar = partes[1]
         else:
             codigo_guardar = seleccion_completa
             falla_guardar = seleccion_completa
-            
+
         # --- SECCIÓN 4: TRABAJO REALIZADO ---
         st.subheader("4. Ejecución")
         desc_trabajo = st.text_area("Descripción del Trabajo (Síntoma)")
         acciones = st.text_area("Acciones Correctivas / Actividad")
         solucion = st.text_area("Solución Final")
 
-        # --- SECCIÓN 5: TIEMPOS (ACTUALIZADO) ---
+        # --- SECCIÓN 5: TIEMPOS (MINUTO A MINUTO) ---
         st.subheader("5. Tiempos")
         t1, t2 = st.columns(2)
-        
-        # Al agregar step=60, permitimos seleccionar minuto a minuto
-        # en lugar de intervalos de 15 minutos.
+        # step=60 permite seleccionar minutos exactos
         h_inicio = t1.time_input("Hora Inicio", value=datetime.now().time(), step=60)
         h_fin = t2.time_input("Hora Fin", value=datetime.now().time(), step=60)
         
         comentario = st.text_input("Comentario Adicional")
 
-        if enviar:
+        # Botón (Dentro del formulario)
+        enviar = st.form_submit_button("Guardar Reporte", type="primary")
+
+    # --- LÓGICA DE ENVÍO (FUERA DEL FORMULARIO) ---
+    if enviar:
+        # Aquí estaba tu error de indentación. Fíjate que este 'if' está pegado a la izquierda.
         if not responsable:
+            # Y este bloque tiene 4 espacios hacia adentro.
             st.error("⚠️ Falta validar al Responsable.")
         elif not celda or not robot:
             st.warning("⚠️ Indica Celda y Robot.")
@@ -177,8 +155,8 @@ if menu == "📝 Nuevo Reporte":
                 apoyo,
                 celda,
                 robot,
-                codigo_guardar,   # Columna H
-                falla_guardar,    # Columna I
+                codigo_guardar,
+                falla_guardar,
                 desc_trabajo,
                 acciones,
                 solucion,
@@ -193,7 +171,7 @@ if menu == "📝 Nuevo Reporte":
             if hoja:
                 hoja.append_row(fila)
                 st.balloons()
-                st.success(f"✅ Reporte guardado. Semana: {semana} | Tiempo: {tiempo_muerto} min")
+                st.success(f"✅ Reporte guardado. Tiempo: {tiempo_muerto} min")
 
 # ==========================================
 # 📊 SECCIÓN: ESTADÍSTICAS
@@ -207,7 +185,7 @@ elif menu == "📊 Estadísticas":
         if len(data) > 0:
             df = pd.DataFrame(data)
             
-            # Convertir Tiempo Muerto a número (por si acaso viene como texto)
+            # Limpieza de datos
             if 'TIEMPO MUERTO' in df.columns:
                 df['TIEMPO MUERTO'] = pd.to_numeric(df['TIEMPO MUERTO'], errors='coerce').fillna(0)
                 total_tm = df['TIEMPO MUERTO'].sum()
@@ -217,27 +195,8 @@ elif menu == "📊 Estadísticas":
             k1, k2, k3 = st.columns(3)
             k1.metric("Total Reportes", len(df))
             k2.metric("Tiempo Muerto Total", f"{int(total_tm)} min")
-            k3.metric("Semana", date.today().isocalendar()[1])
+            k3.metric("Semana Actual", date.today().isocalendar()[1])
             
-            # Gráficas
-            tab1, tab2 = st.tabs(["Por Robot", "Por Tipo de Falla"])
+            tab1, tab2 = st.tabs(["Por Robot", "Por Falla"])
             
-            with tab1:
-                if 'ROBOT' in df.columns:
-                    fig = px.bar(df, x='ROBOT', y='TIEMPO MUERTO', color='CELDA', title="Tiempo Muerto por Robot")
-                    st.plotly_chart(fig, use_container_width=True)
-            
-            with tab2:
-                # Ahora usamos 'CODIGO DE FALLO' que es la columna H del Excel
-                if 'CODIGO DE FALLO' in df.columns:
-                    fig2 = px.pie(df, names='CODIGO DE FALLO', title="Frecuencia de Códigos")
-                    st.plotly_chart(fig2, use_container_width=True)
-
-            st.dataframe(df.tail(5))
-        else:
-
-            st.info("Sin datos.")
-
-
-
-
+            with tab
