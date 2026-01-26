@@ -4,8 +4,8 @@ from datetime import datetime, date, timedelta, time
 import gspread
 import os
 
-# --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Mantenimiento KUKA", page_icon="🤖", layout="centered")
+# --- CONFIGURACIÓN ---
+st.set_page_config(page_title="KUKA Mantenimiento", page_icon="🤖", layout="centered")
 
 # --- CONEXIÓN A GOOGLE SHEETS ---
 def conectar_google_sheet():
@@ -18,27 +18,26 @@ def conectar_google_sheet():
 
 # --- FUNCIÓN PARA CONVERTIR NÚMERO A HORA ---
 def convertir_a_hora(valor):
-    # Convierte un número como 1430 en un objeto de tiempo 14:30
     texto = str(int(valor)).zfill(4)
     try:
-        h = int(texto[:2])
-        m = int(texto[2:])
-        if h > 23: h = 23
-        if m > 59: m = 59
-        return time(h, m)
+        h, m = int(texto[:2]), int(texto[2:])
+        return time(min(h, 23), min(m, 59))
     except:
         return time(0, 0)
 
-# --- CARGA DE DATOS ---
+# --- CARGA Y LIMPIEZA DE DATOS ---
 @st.cache_data
 def cargar_datos():
     try:
-        df_cat = pd.read_csv('catalogo_fallas.csv')
-        df_cat.columns = df_cat.columns.str.strip().str.upper()
-        df_tec = pd.read_csv('tecnicos.csv', dtype={'ID': str})
-        df_tec.columns = df_tec.columns.str.strip().str.upper()
-        return df_cat, df_tec
-    except:
+        # Cargamos catálogos y limpiamos nombres de columnas (QUITAR ESPACIOS Y MAYÚSCULAS)
+        df_c = pd.read_csv('catalogo_fallas.csv')
+        df_c.columns = df_c.columns.str.strip().str.upper()
+        
+        df_t = pd.read_csv('tecnicos.csv', dtype={'ID': str})
+        df_t.columns = df_t.columns.str.strip().str.upper()
+        return df_c, df_t
+    except Exception as e:
+        st.error(f"Error cargando archivos: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
 df_catalogo, df_tecnicos = cargar_datos()
@@ -46,19 +45,19 @@ df_catalogo, df_tecnicos = cargar_datos()
 # --- ENCABEZADO ---
 col_logo, col_tit = st.columns([1, 4])
 with col_logo:
-    if os.path.exists("logo.png"):
-        st.image("logo.png", width=80)
-    else:
-        st.image("https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=60)
+    st.image("logo.png" if os.path.exists("logo.png") else "https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=70)
 with col_tit:
     st.title("Reporte de fallas de mantenimiento")
 
-# --- FORMULARIO ---
-with st.form("form_rapido"):
-    st.markdown("### 👤 Datos del Técnico")
+# --- FORMULARIO (TODO DEBE IR DENTRO DEL 'WITH') ---
+with st.form("form_mantenimiento"):
+    st.markdown("### 👤 Personal")
     id_resp = st.text_input("No. Control Responsable", max_chars=5)
     
-    nombres_tec = df_tecnicos['NOMBRE'].tolist() if not df_tecnicos.empty else []
+    # Buscamos la columna de nombre de forma flexible
+    col_nombre_tec = 'NOMBRE' if 'NOMBRE' in df_tecnicos.columns else df_tecnicos.columns[1] if not df_tecnicos.empty else ""
+    nombres_tec = df_tecnicos[col_nombre_tec].tolist() if col_nombre_tec else []
+    
     apoyo = st.multiselect("Personal de Apoyo", nombres_tec)
     turno = st.selectbox("Turno", ["Mañana", "Tarde", "Noche"])
 
@@ -68,65 +67,55 @@ with st.form("form_rapido"):
     robot = c2.text_input("Robot")
 
     st.markdown("### 📋 Falla")
-    col_a = next((c for c in df_catalogo.columns if "AREA" in c), "AREA")
-    areas = df_catalogo[col_a].unique() if not df_catalogo.empty else []
+    # Filtros inteligentes
+    areas = df_catalogo['AREA'].unique() if 'AREA' in df_catalogo.columns else []
     area_sel = st.selectbox("Área", areas)
     
-    col_t = next((c for c in df_catalogo.columns if "TIPO" in c), "TIPO")
-    tipos = df_catalogo[df_catalogo[col_a] == area_sel][col_t].unique() if not df_catalogo.empty else []
+    tipos = df_catalogo[df_catalogo['AREA'] == area_sel]['TIPO'].unique() if not df_catalogo.empty else []
     tipo_sel = st.selectbox("Tipo de Falla", tipos)
 
-    df_f = df_catalogo[(df_catalogo[col_a] == area_sel) & (df_catalogo[col_t] == tipo_sel)]
-    col_c = next((c for c in df_f.columns if "CODIGO" in c), df_f.columns[0] if not df_f.empty else "")
-    col_d = next((c for c in df_f.columns if "SUB" in c or "MODO" in c or "DESC" in c), df_f.columns[-1] if not df_f.empty else "")
-    
-    opciones = (df_f[col_c] + " - " + df_f[col_d]).tolist() if not df_f.empty else ["Sin datos"]
+    df_f = df_catalogo[(df_catalogo['AREA'] == area_sel) & (df_catalogo['TIPO'] == tipo_sel)]
+    opciones = (df_f['CODIGO DE FALLO'] + " - " + df_f['SUB MODO DE FALLA']).tolist() if not df_f.empty else ["Sin datos"]
     falla_sel = st.selectbox("Código de Falla", opciones)
 
     st.markdown("### 🛠️ Ejecución")
     sintoma = st.text_area("Descripción del Síntoma")
     accion = st.text_area("Acción Realizada")
 
-    # --- SECCIÓN DE TIEMPOS (4 DÍGITOS) ---
-    st.markdown("### ⏱️ Tiempos (Formato 4 dígitos)")
-    st.info("Escribe la hora seguida de los minutos (Ej: 0830 o 1415)")
-    
-    ahora_num = int(datetime.now().strftime("%H%M"))
-    
+    st.markdown("### ⏱️ Tiempos (4 dígitos)")
     t_c1, t_c2 = st.columns(2)
+    ahora_n = int(datetime.now().strftime("%H%M"))
+    
     with t_c1:
-        num_ini = st.number_input("Hora Inicio", value=ahora_num, step=1, format="%d")
-        # Mostramos ayuda visual de lo que se interpretará
-        h_i_obj = convertir_a_hora(num_ini)
-        st.caption(f"Interpretado como: {h_i_obj.strftime('%H:%M')}")
-        
+        num_ini = st.number_input("Hora Inicio", value=ahora_n, step=1, format="%d")
     with t_c2:
-        num_fin = st.number_input("Hora Fin", value=ahora_num, step=1, format="%d")
-        h_f_obj = convertir_a_hora(num_fin)
-        st.caption(f"Interpretado como: {h_f_obj.strftime('%H:%M')}")
+        num_fin = st.number_input("Hora Fin", value=ahora_n, step=1, format="%d")
 
+    # EL BOTÓN AHORA SÍ ESTÁ DENTRO DEL FORMULARIO
     enviar = st.form_submit_button("GUARDAR REPORTE", type="primary", use_container_width=True)
 
-# --- GUARDADO ---
+# --- LÓGICA DE GUARDADO (FUERA DEL FORMULARIO) ---
 if enviar:
     if not id_resp or not celda:
         st.error("⚠️ Falta ID o Celda")
     else:
-        dt_i = datetime.combine(date.today(), convertir_a_hora(num_ini))
-        dt_f = datetime.combine(date.today(), convertir_a_hora(num_fin))
+        h_i, h_f = convertir_a_hora(num_ini), convertir_a_hora(num_fin)
+        dt_i, dt_f = datetime.combine(date.today(), h_i), datetime.combine(date.today(), h_f)
         if dt_f < dt_i: dt_f += timedelta(days=1)
-        duracion = int((dt_f - dt_i).total_seconds() / 60)
+        minutos = int((dt_f - dt_i).total_seconds() / 60)
 
-        nombre_tec = df_tecnicos[df_tecnicos['ID'] == id_resp]['NOMBRE'].iloc[0] if id_resp in df_tecnicos['ID'].values else id_resp
+        # Buscar nombre del responsable
+        id_col = 'ID' if 'ID' in df_tecnicos.columns else df_tecnicos.columns[0]
+        nombre_resp = df_tecnicos[df_tecnicos[id_col] == id_resp][col_nombre_tec].iloc[0] if id_resp in df_tecnicos[id_col].values else id_resp
 
         fila = [
             date.today().isocalendar()[1], date.today().strftime("%Y-%m-%d"), turno,
-            nombre_tec, ", ".join(apoyo), celda, robot, falla_sel, "",
-            sintoma, accion, "", "", "", "", duracion, ""
+            nombre_resp, ", ".join(apoyo), celda, robot, falla_sel, "",
+            sintoma, accion, "", "", "", "", minutos, ""
         ]
 
         hoja = conectar_google_sheet()
         if hoja:
             hoja.append_row(fila)
             st.balloons()
-            st.success(f"✅ Guardado. Tiempo muerto: {duracion} min")
+            st.success(f"✅ Guardado en Google Sheets. Tiempo: {minutos} min")
