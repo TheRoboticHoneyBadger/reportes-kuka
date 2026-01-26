@@ -64,6 +64,7 @@ if menu == "📝 Nuevo Reporte":
         st.subheader("1. Datos Generales")
         c1, c2, c3 = st.columns(3)
         
+        # Validación de Responsable (Sigue igual, por ID para seguridad)
         id_responsable = c1.text_input("No. Control Responsable", max_chars=5)
         responsable = ""
         if id_responsable and not df_tecnicos.empty:
@@ -74,7 +75,16 @@ if menu == "📝 Nuevo Reporte":
             else:
                 c1.error("❌ ID no encontrado")
         
-        apoyo = c2.text_input("Personal de Apoyo (Opcional)")
+        # CAMBIO AQUÍ: Personal de Apoyo ahora es una lista desplegable
+        # 1. Obtenemos la lista de nombres del archivo tecnicos.csv
+        lista_nombres = df_tecnicos['Nombre'].unique().tolist() if not df_tecnicos.empty else []
+        
+        # 2. Creamos un selector múltiple (puedes elegir uno o varios)
+        apoyo_seleccionado = c2.multiselect("Personal de Apoyo", lista_nombres)
+        
+        # 3. Convertimos la lista de seleccionados a un texto simple (ej: "Juan, Pedro") para guardarlo
+        apoyo = ", ".join(apoyo_seleccionado)
+        
         turno = c3.selectbox("Turno", ["Mañana", "Tarde", "Noche"])
 
         # --- SECCIÓN 2: UBICACIÓN Y ORDEN ---
@@ -226,4 +236,5 @@ elif menu == "📊 Estadísticas":
         else:
 
             st.info("Sin datos.")
+
 
