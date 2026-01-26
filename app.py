@@ -5,42 +5,7 @@ import gspread
 import os
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="KUKA Mantenimiento", page_icon="🤖", layout="centered")
-
-# CSS PARA FORZAR ALINEACIÓN HORIZONTAL Y ESTILO PROFESIONAL
-st.markdown("""
-    <style>
-    /* Forzar que las columnas de la hora no se apilen en el celular */
-    [data-testid="column"] {
-        width: fit-content !important;
-        flex: unset !important;
-        min-width: 0px !important;
-    }
-    [data-testid="stHorizontalBlock"] {
-        align-items: center !important;
-        justify-content: flex-start !important;
-        gap: 8px !important;
-        display: flex !important;
-        flex-direction: row !important;
-    }
-    /* Quitar margen superior de las etiquetas ocultas */
-    .stNumberInput div {
-        margin-top: 0px !important;
-    }
-    /* Estilo para los dos puntos */
-    .puntos-separador {
-        font-size: 24px;
-        font-weight: bold;
-        margin-bottom: 5px;
-        color: #31333F;
-    }
-    .titulo-form {
-        color: #1E3A8A;
-        font-weight: bold;
-        margin-bottom: 10px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+st.set_page_config(page_title="Mantenimiento KUKA", page_icon="🤖", layout="centered")
 
 # --- CONEXIÓN A GOOGLE SHEETS ---
 def conectar_google_sheet():
@@ -50,6 +15,19 @@ def conectar_google_sheet():
         return gc.open("Base_Datos_Mantenimiento").sheet1
     except:
         return None
+
+# --- FUNCIÓN PARA CONVERTIR NÚMERO A HORA ---
+def convertir_a_hora(valor):
+    # Convierte un número como 1430 en un objeto de tiempo 14:30
+    texto = str(int(valor)).zfill(4)
+    try:
+        h = int(texto[:2])
+        m = int(texto[2:])
+        if h > 23: h = 23
+        if m > 59: m = 59
+        return time(h, m)
+    except:
+        return time(0, 0)
 
 # --- CARGA DE DATOS ---
 @st.cache_data
@@ -68,84 +46,74 @@ df_catalogo, df_tecnicos = cargar_datos()
 # --- ENCABEZADO ---
 col_logo, col_tit = st.columns([1, 4])
 with col_logo:
-    st.image("logo.png" if os.path.exists("logo.png") else "https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=70)
+    if os.path.exists("logo.png"):
+        st.image("logo.png", width=80)
+    else:
+        st.image("https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=60)
 with col_tit:
-    st.markdown("<h2 class='titulo-form'>Reporte de fallas de mantenimiento</h2>", unsafe_allow_html=True)
+    st.title("Reporte de fallas de mantenimiento")
 
-# --- FORMULARIO PRINCIPAL ---
-with st.form("form_mantenimiento"):
-    
-    # 1. IDENTIFICACIÓN
-    st.markdown("#### 👤 Responsable")
+# --- FORMULARIO ---
+with st.form("form_rapido"):
+    st.markdown("### 👤 Datos del Técnico")
     id_resp = st.text_input("No. Control Responsable", max_chars=5)
     
     nombres_tec = df_tecnicos['NOMBRE'].tolist() if not df_tecnicos.empty else []
     apoyo = st.multiselect("Personal de Apoyo", nombres_tec)
     turno = st.selectbox("Turno", ["Mañana", "Tarde", "Noche"])
 
-    # 2. LOCALIZACIÓN
-    st.markdown("#### 📍 Ubicación")
-    c_loc1, c_loc2 = st.columns(2)
-    celda = c_loc1.text_input("Celda")
-    robot = c_loc2.text_input("Robot")
-    
-    # 3. FALLA
-    st.markdown("#### 📋 Detalle de la Falla")
+    st.markdown("### 📍 Ubicación")
+    c1, c2 = st.columns(2)
+    celda = c1.text_input("Celda")
+    robot = c2.text_input("Robot")
+
+    st.markdown("### 📋 Falla")
     col_a = next((c for c in df_catalogo.columns if "AREA" in c), "AREA")
-    col_t = next((c for c in df_catalogo.columns if "TIPO" in c), "TIPO")
-    
     areas = df_catalogo[col_a].unique() if not df_catalogo.empty else []
     area_sel = st.selectbox("Área", areas)
     
+    col_t = next((c for c in df_catalogo.columns if "TIPO" in c), "TIPO")
     tipos = df_catalogo[df_catalogo[col_a] == area_sel][col_t].unique() if not df_catalogo.empty else []
     tipo_sel = st.selectbox("Tipo de Falla", tipos)
 
     df_f = df_catalogo[(df_catalogo[col_a] == area_sel) & (df_catalogo[col_t] == tipo_sel)]
-    col_c = next((c for c in df_f.columns if "CODIGO" in c), df_f.columns[0])
-    col_d = next((c for c in df_f.columns if "SUB" in c or "MODO" in c or "DESC" in c), df_f.columns[-1])
+    col_c = next((c for c in df_f.columns if "CODIGO" in c), df_f.columns[0] if not df_f.empty else "")
+    col_d = next((c for c in df_f.columns if "SUB" in c or "MODO" in c or "DESC" in c), df_f.columns[-1] if not df_f.empty else "")
     
-    opciones_falla = (df_f[col_c] + " - " + df_f[col_d]).tolist() if not df_f.empty else ["Sin datos"]
-    seleccion_falla = st.selectbox("Código Específico", opciones_falla)
+    opciones = (df_f[col_c] + " - " + df_f[col_d]).tolist() if not df_f.empty else ["Sin datos"]
+    falla_sel = st.selectbox("Código de Falla", opciones)
 
-    # 4. EJECUCIÓN
-    st.markdown("#### 🛠️ Trabajo Realizado")
-    sintoma = st.text_area("Descripción / Síntoma")
-    accion = st.text_area("Acción Correctiva")
+    st.markdown("### 🛠️ Ejecución")
+    sintoma = st.text_area("Descripción del Síntoma")
+    accion = st.text_area("Acción Realizada")
 
-    # 5. TIEMPOS (RELOJ DIGITAL HORIZONTAL PROTEGIDO)
-    st.markdown("#### ⏱️ Tiempos (24h)")
-    ahora = datetime.now()
+    # --- SECCIÓN DE TIEMPOS (4 DÍGITOS) ---
+    st.markdown("### ⏱️ Tiempos (Formato 4 dígitos)")
+    st.info("Escribe la hora seguida de los minutos (Ej: 0830 o 1415)")
+    
+    ahora_num = int(datetime.now().strftime("%H%M"))
+    
+    t_c1, t_c2 = st.columns(2)
+    with t_c1:
+        num_ini = st.number_input("Hora Inicio", value=ahora_num, step=1, format="%d")
+        # Mostramos ayuda visual de lo que se interpretará
+        h_i_obj = convertir_a_hora(num_ini)
+        st.caption(f"Interpretado como: {h_i_obj.strftime('%H:%M')}")
+        
+    with t_c2:
+        num_fin = st.number_input("Hora Fin", value=ahora_num, step=1, format="%d")
+        h_f_obj = convertir_a_hora(num_fin)
+        st.caption(f"Interpretado como: {h_f_obj.strftime('%H:%M')}")
 
-    # BLOQUE INICIO
-    st.write("**Hora Inicio:**")
-    c_h1, c_sep1, c_m1, c_sp1 = st.columns([1, 0.2, 1, 3])
-    with c_h1:
-        h_ini = st.number_input("HI", 0, 23, ahora.hour, key="hi", label_visibility="collapsed", format="%02d")
-    with c_sep1:
-        st.markdown('<p class="puntos-separador">:</p>', unsafe_allow_html=True)
-    with c_m1:
-        m_ini = st.number_input("MI", 0, 59, ahora.minute, key="mi", label_visibility="collapsed", format="%02d")
+    enviar = st.form_submit_button("GUARDAR REPORTE", type="primary", use_container_width=True)
 
-    # BLOQUE FIN
-    st.write("**Hora Fin:**")
-    c_h2, c_sep2, c_m2, c_sp2 = st.columns([1, 0.2, 1, 3])
-    with c_h2:
-        h_fin = st.number_input("HF", 0, 23, ahora.hour, key="hf", label_visibility="collapsed", format="%02d")
-    with c_sep2:
-        st.markdown('<p class="puntos-separador">:</p>', unsafe_allow_html=True)
-    with c_m2:
-        m_fin = st.number_input("MF", 0, 59, ahora.minute, key="mf", label_visibility="collapsed", format="%02d")
-
-    st.markdown("---")
-    enviar = st.form_submit_button("💾 GUARDAR REPORTE", type="primary", use_container_width=True)
-
-# --- LÓGICA DE GUARDADO ---
+# --- GUARDADO ---
 if enviar:
     if not id_resp or not celda:
-        st.error("⚠️ Datos obligatorios faltantes")
+        st.error("⚠️ Falta ID o Celda")
     else:
-        dt_i = datetime.combine(date.today(), time(h_ini, m_ini))
-        dt_f = datetime.combine(date.today(), time(h_fin, m_fin))
+        dt_i = datetime.combine(date.today(), convertir_a_hora(num_ini))
+        dt_f = datetime.combine(date.today(), convertir_a_hora(num_fin))
         if dt_f < dt_i: dt_f += timedelta(days=1)
         duracion = int((dt_f - dt_i).total_seconds() / 60)
 
@@ -153,7 +121,7 @@ if enviar:
 
         fila = [
             date.today().isocalendar()[1], date.today().strftime("%Y-%m-%d"), turno,
-            nombre_tec, ", ".join(apoyo), celda, robot, seleccion_falla, "",
+            nombre_tec, ", ".join(apoyo), celda, robot, falla_sel, "",
             sintoma, accion, "", "", "", "", duracion, ""
         ]
 
