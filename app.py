@@ -8,6 +8,32 @@ import os
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Mantenimiento KUKA", page_icon="🤖", layout="wide")
 
+# --- TRUCO CSS PARA ALINEACIÓN HORIZONTAL EN MÓVIL ---
+st.markdown("""
+    <style>
+    /* Fuerza a las columnas a no romperse en móvil */
+    [data-testid="column"] {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-width: 0px !important;
+    }
+    [data-testid="stHorizontalBlock"] {
+        display: flex;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+    }
+    /* Estilo para los dos puntos */
+    .sep-reloj {
+        font-size: 24px;
+        font-weight: bold;
+        margin-top: 15px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 # --- CONEXIÓN A GOOGLE SHEETS ---
 def conectar_google_sheet():
     try:
@@ -38,55 +64,40 @@ menu = st.sidebar.radio("Ir a:", ["📝 Nuevo Reporte", "📊 Estadísticas"])
 
 if menu == "📝 Nuevo Reporte":
     # ENCABEZADO
-    col_logo, col_titulo = st.columns([1, 5])
+    col_logo, col_titulo = st.columns([1, 4])
     with col_logo:
         if os.path.exists("logo.png"):
-            st.image("logo.png", width=100)
+            st.image("logo.png", width=80)
         else:
-            st.image("https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=80)
+            st.image("https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=60)
     
     with col_titulo:
-        st.title("Reporte de fallas de mantenimiento")
+        st.subheader("Reporte de fallas de mantenimiento")
 
-    st.markdown("---")
-
-    with st.form("form_reporte"):
+    with st.form("form_reporte", clear_on_submit=False):
         
         # --- 1. DATOS GENERALES ---
-        st.subheader("1. Datos Generales")
-        c1, c2, c3 = st.columns(3)
-        id_responsable = c1.text_input("No. Control Responsable", max_chars=5)
-        responsable = ""
-        if id_responsable and not df_tecnicos.empty:
-            user = df_tecnicos[df_tecnicos['ID'] == id_responsable]
-            if not user.empty:
-                responsable = user.iloc[0]['Nombre']
-                c1.success(f"👤 {responsable}")
+        st.markdown("### 1. Datos Generales")
+        id_responsable = st.text_input("No. Control Responsable", max_chars=5)
         
-        lista_nombres = df_tecnicos['Nombre'].unique().tolist() if not df_tecnicos.empty else []
-        apoyo_seleccionado = c2.multiselect("Personal de Apoyo", lista_nombres)
-        turno = c3.selectbox("Turno", ["Mañana", "Tarde", "Noche"])
+        lista_nombres = df_tecnicos['NOMBRE'].unique().tolist() if not df_tecnicos.empty else []
+        apoyo_seleccionado = st.multiselect("Personal de Apoyo", lista_nombres)
+        turno = st.selectbox("Turno", ["Mañana", "Tarde", "Noche"])
 
-        # --- 2. UBICACIÓN Y ORDEN ---
-        st.subheader("2. Ubicación y Orden")
-        u1, u2, u3, u4, u5 = st.columns(5)
-        celda = u1.text_input("Celda")
-        robot = u2.text_input("Robot")
-        no_orden = u3.text_input("No. de Orden")
-        tipo_orden = u4.selectbox("Tipo de Orden", ["Correctivo", "Preventivo", "Mejora", "Falla Menor"])
-        status = u5.selectbox("Status", ["Cerrada", "Abierta", "Pendiente de Refacción"])
-
-        # --- 3. DETALLE DE LA FALLA ---
-        st.subheader("3. Detalle de la Falla")
-        col_cat1, col_cat2 = st.columns(2)
+        # --- 2. UBICACIÓN Y DETALLE ---
+        st.markdown("### 2. Detalles")
+        c_u1, c_u2 = st.columns(2)
+        celda = c_u1.text_input("Celda")
+        robot = c_u2.text_input("Robot")
         
+        # --- 3. FALLA ---
         col_area = next((c for c in df_catalogo.columns if "AREA" in c), "AREA")
         areas = df_catalogo[col_area].unique() if not df_catalogo.empty else []
-        area_sel = col_cat1.selectbox("Área", areas)
+        area_sel = st.selectbox("Área", areas)
         
         col_tipo = next((c for c in df_catalogo.columns if "TIPO" in c), "TIPO")
         tipos = df_catalogo[df_catalogo[col_area] == area_sel][col_tipo].unique() if not df_catalogo.empty else []
-        tipo_sel = col_cat2.selectbox("Tipo de Falla", tipos)
+        tipo_sel = st.selectbox("Tipo de Falla", tipos)
 
         lista_opciones = ["Sin datos"]
         if not df_catalogo.empty:
@@ -98,43 +109,40 @@ if menu == "📝 Nuevo Reporte":
         seleccion_completa = st.selectbox("Código Específico", lista_opciones)
 
         # --- 4. EJECUCIÓN ---
-        st.subheader("4. Ejecución")
-        desc_trabajo = st.text_area("Descripción del Trabajo (Síntoma)")
-        acciones = st.text_area("Acciones Correctivas / Actividad")
-        solucion = st.text_area("Solución Final")
+        desc_trabajo = st.text_area("Descripción (Síntoma)")
+        acciones = st.text_area("Acciones Correctivas")
 
-        # --- 5. TIEMPOS (ALINEACIÓN HORIZONTAL ESTRICTA) ---
-        st.subheader("5. Tiempos (Formato 24h)")
+        # --- 5. TIEMPOS (RELOJ COMPACTO HORIZONTAL) ---
+        st.markdown("### 5. Tiempos (Formato 24h)")
         ahora = datetime.now()
 
-        # Fila para Hora de Inicio
-        st.write("**Hora Inicio:**")
-        hi1, hi2, hi3, hi_spacer = st.columns([0.5, 0.1, 0.5, 3])
+        # BLOQUE INICIO
+        st.write("Hora Inicio:")
+        # Usamos columnas muy estrechas para que quepan en una fila de celular
+        hi1, hi_sep, hi2, hi_space = st.columns([2, 1, 2, 5])
         with hi1:
             h_ini = st.number_input("H_I", 0, 23, ahora.hour, 1, format="%02d", label_visibility="collapsed")
+        with hi_sep:
+            st.markdown('<p class="sep-reloj">:</p>', unsafe_allow_html=True)
         with hi2:
-            st.markdown("<h3 style='text-align: center; margin-top: -5px;'>:</h3>", unsafe_allow_html=True)
-        with hi3:
             m_ini = st.number_input("M_I", 0, 59, ahora.minute, 1, format="%02d", label_visibility="collapsed")
 
-        # Fila para Hora de Fin
-        st.write("**Hora Fin:**")
-        hf1, hf2, hf3, hf_spacer = st.columns([0.5, 0.1, 0.5, 3])
+        # BLOQUE FIN
+        st.write("Hora Fin:")
+        hf1, hf_sep, hf2, hf_space = st.columns([2, 1, 2, 5])
         with hf1:
             h_fin = st.number_input("H_F", 0, 23, ahora.hour, 1, format="%02d", label_visibility="collapsed")
+        with hf_sep:
+            st.markdown('<p class="sep-reloj">:</p>', unsafe_allow_html=True)
         with hf2:
-            st.markdown("<h3 style='text-align: center; margin-top: -5px;'>:</h3>", unsafe_allow_html=True)
-        with hf3:
             m_fin = st.number_input("M_F", 0, 59, ahora.minute, 1, format="%02d", label_visibility="collapsed")
 
-        comentario = st.text_input("Comentario Adicional")
-        enviar = st.form_submit_button("Guardar Reporte", type="primary")
+        enviar = st.form_submit_button("Guardar Reporte", type="primary", use_container_width=True)
 
     if enviar:
         if not id_responsable or not celda:
-            st.error("⚠️ Datos incompletos.")
+            st.error("⚠️ Falta ID o Celda")
         else:
-            # Lógica de guardado...
             hora_inicio = time(h_ini, m_ini)
             hora_fin = time(h_fin, m_fin)
             dt_ini = datetime.combine(date.today(), hora_inicio)
@@ -144,14 +152,14 @@ if menu == "📝 Nuevo Reporte":
             
             fila = [date.today().isocalendar()[1], date.today().strftime("%Y-%m-%d"), turno, id_responsable, 
                     ", ".join(apoyo_seleccionado), celda, robot, seleccion_completa, "", desc_trabajo, 
-                    acciones, solucion, no_orden, tipo_orden, status, tiempo_muerto, comentario]
+                    acciones, "", "", "", "", tiempo_muerto, ""]
             
             hoja = conectar_google_sheet()
             if hoja:
                 hoja.append_row(fila)
                 st.balloons()
-                st.success(f"✅ Guardado. Tiempo muerto: {tiempo_muerto} min")
+                st.success(f"✅ Guardado: {tiempo_muerto} min")
 
 elif menu == "📊 Estadísticas":
     st.title("📊 Indicadores")
-    # (Resto del código de estadísticas igual...)
+    # ... resto del código ...
