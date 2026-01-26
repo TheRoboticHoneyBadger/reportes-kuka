@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, time
 import gspread
 import plotly.express as px
 
@@ -22,9 +22,10 @@ def conectar_google_sheet():
 def cargar_datos():
     try:
         df_cat = pd.read_csv('catalogo_fallas.csv')
-        # Limpiamos espacios en los nombres de las columnas por si acaso
-        df_cat.columns = df_cat.columns.str.strip()
-        df_cat = df_cat.astype(str) # Forzamos todo a texto
+        # LIMPIEZA AUTOMÁTICA DE COLUMNAS (Para evitar el KeyError)
+        # Quita espacios al inicio/final y convierte a mayúsculas
+        df_cat.columns = df_cat.columns.str.strip().str.upper()
+        df_cat = df_cat.astype(str)
         
         df_tec = pd.read_csv('tecnicos.csv', dtype={'ID': str})
         return df_cat, df_tec
@@ -50,7 +51,6 @@ if menu == "📝 Nuevo Reporte":
         st.subheader("1. Datos Generales")
         c1, c2, c3 = st.columns(3)
         
-        # Validación de Responsable
         id_responsable = c1.text_input("No. Control Responsable", max_chars=5)
         responsable = ""
         if id_responsable and not df_tecnicos.empty:
@@ -61,7 +61,6 @@ if menu == "📝 Nuevo Reporte":
             else:
                 c1.error("❌ ID no encontrado")
         
-        # Personal de Apoyo
         lista_nombres = df_tecnicos['Nombre'].unique().tolist() if not df_tecnicos.empty else []
         apoyo_seleccionado = c2.multiselect("Personal de Apoyo", lista_nombres)
         apoyo = ", ".join(apoyo_seleccionado)
@@ -83,22 +82,30 @@ if menu == "📝 Nuevo Reporte":
         
         col_cat1, col_cat2 = st.columns(2)
         
-        # Filtros
-        areas = df_catalogo['AREA'].unique() if not df_catalogo.empty else []
+        # Usamos .get para evitar error si la columna no existe
+        col_area = 'AREA' if 'AREA' in df_catalogo.columns else df_catalogo.columns[0]
+        areas = df_catalogo[col_area].unique() if not df_catalogo.empty else []
         area_sel = col_cat1.selectbox("Área", areas)
         
         tipos = []
+        col_tipo = 'TIPO' if 'TIPO' in df_catalogo.columns else df_catalogo.columns[1]
+        
         if not df_catalogo.empty:
-            df_filtrado_area = df_catalogo[df_catalogo['AREA'] == area_sel]
-            tipos = df_filtrado_area['TIPO'].unique()
+            df_filtrado_area = df_catalogo[df_catalogo[col_area] == area_sel]
+            tipos = df_filtrado_area[col_tipo].unique()
         tipo_sel = col_cat2.selectbox("Tipo de Falla", tipos)
 
         lista_opciones = ["Sin datos"]
         if not df_catalogo.empty and len(tipos) > 0:
-            df_final = df_filtrado_area[df_filtrado_area['TIPO'] == tipo_sel]
-            # Creamos la lista combinando Código y Sub Modo
-            # Asegúrate que en tu CSV la columna se llame exactamente 'SUB MODO DE FALLA'
-            lista_opciones = df_final['CODIGO DE FALLO'] + " - " + df_final['SUB MODO DE FALLA']
+            df_final = df_filtrado_area[df_filtrado_area[col_tipo] == tipo_sel]
+            
+            # Buscamos las columnas correctas aunque tengan nombres raros
+            col_codigo = 'CODIGO DE FALLO' if 'CODIGO DE FALLO' in df_final.columns else df_final.columns[2]
+            # Buscamos algo que se parezca a SUB MODO
+            cols_posibles = [c for c in df_final.columns if "SUB" in c or "MODO" in c]
+            col_submodo = cols_posibles[0] if cols_posibles else df_final.columns[-2] # Fallback
+            
+            lista_opciones = df_final[col_codigo] + " - " + df_final[col_submodo]
         
         seleccion_completa = st.selectbox("Seleccione el Código Específico", lista_opciones)
         
@@ -118,18 +125,36 @@ if menu == "📝 Nuevo Reporte":
         acciones = st.text_area("Acciones Correctivas / Actividad")
         solucion = st.text_area("Solución Final")
 
-        # --- SECCIÓN 5: TIEMPOS ---
+        # --- SECCIÓN 5: TIEMPOS (NUEVO FORMATO: RODILLOS) ---
         st.subheader("5. Tiempos")
-        t1, t2 = st.columns(2)
-        h_inicio = t1.time_input("Hora Inicio", value=datetime.now().time(), step=60)
-        h_fin = t2.time_input("Hora Fin", value=datetime.now().time(), step=60)
+        st.caption("Selecciona Hora y Minutos por separado")
+        
+        # Fila para HORA INICIO
+        col_h1, col_m1, col_sep, col_h2, col_m2 = st.columns([1, 1, 0.5, 1, 1])
+        
+        with col_h1:
+            st.markdown("**Inicio:**")
+            h_ini_val = st.selectbox("Hora (Ini)", range(24), key="h_i")
+        with col_m1:
+            st.markdown("&nbsp;") # Espacio vacío para alinear
+            m_ini_val = st.selectbox("Min (Ini)", range(60), key="m_i")
+            
+        # Fila para HORA FIN
+        with col_h2:
+            st.markdown("**Fin:**")
+            h_fin_val = st.selectbox("Hora (Fin)", range(24), key="h_f", index=min(h_ini_val, 23))
+        with col_m2:
+            st.markdown("&nbsp;")
+            m_fin_val = st.selectbox("Min (Fin)", range(60), key="m_f")
+
+        # Construimos los objetos de tiempo reales
+        h_inicio = time(h_ini_val, m_ini_val)
+        h_fin = time(h_fin_val, m_fin_val)
         
         comentario = st.text_input("Comentario Adicional")
 
-        # --- BOTÓN DE ENVÍO (DENTRO DEL FORMULARIO) ---
         enviar = st.form_submit_button("Guardar Reporte", type="primary")
 
-    # --- LÓGICA FUERA DEL FORMULARIO ---
     if enviar:
         if not responsable:
             st.error("⚠️ Falta validar al Responsable.")
@@ -153,13 +178,13 @@ if menu == "📝 Nuevo Reporte":
             if hoja:
                 hoja.append_row(fila)
                 st.balloons()
-                st.success(f"✅ Reporte guardado. Tiempo: {tiempo_muerto} min")
+                st.success(f"✅ Guardado. Tiempo: {tiempo_muerto} min")
 
 # ==========================================
 # 📊 SECCIÓN: ESTADÍSTICAS
 # ==========================================
 elif menu == "📊 Estadísticas":
-    st.title("📊 Indicadores de Mantenimiento")
+    st.title("📊 Indicadores")
     hoja = conectar_google_sheet()
     
     if hoja:
@@ -173,24 +198,20 @@ elif menu == "📊 Estadísticas":
             else:
                 total_tm = 0
 
-            k1, k2, k3 = st.columns(3)
-            k1.metric("Total Reportes", len(df))
-            k2.metric("Tiempo Muerto Total", f"{int(total_tm)} min")
-            k3.metric("Semana Actual", date.today().isocalendar()[1])
+            k1, k2 = st.columns(2)
+            k1.metric("Reportes", len(df))
+            k2.metric("Tiempo Muerto", f"{int(total_tm)} min")
             
-            # --- AQUÍ ESTABA EL ERROR, YA CORREGIDO ---
             tab1, tab2 = st.tabs(["Por Robot", "Por Falla"])
-            
             with tab1:
                 if 'ROBOT' in df.columns:
-                    fig = px.bar(df, x='ROBOT', y='TIEMPO MUERTO', color='CELDA', title="Tiempo Muerto por Robot")
-                    st.plotly_chart(fig, use_container_width=True)
-            
+                    st.plotly_chart(px.bar(df, x='ROBOT', y='TIEMPO MUERTO', color='CELDA'), use_container_width=True)
             with tab2:
-                if 'CODIGO DE FALLO' in df.columns:
-                    fig2 = px.pie(df, names='CODIGO DE FALLO', title="Códigos Recurrentes")
-                    st.plotly_chart(fig2, use_container_width=True)
+                # Buscamos columna de Código
+                col_code = 'CODIGO DE FALLO' if 'CODIGO DE FALLO' in df.columns else df.columns[7]
+                if col_code in df.columns:
+                    st.plotly_chart(px.pie(df, names=col_code), use_container_width=True)
 
             st.dataframe(df.tail(5))
         else:
-            st.info("Esperando datos...")
+            st.info("Sin datos.")
