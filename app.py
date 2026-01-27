@@ -48,9 +48,11 @@ menu = st.sidebar.radio("Ir a:", ["📝 Nuevo Reporte", "📊 Estadísticas"])
 # 📝 SECCIÓN: NUEVO REPORTE
 # ==========================================
 if menu == "📝 Nuevo Reporte":
-    col_logo, col_tit = st.columns([1, 4])
+    # Ajuste de columnas para logo más grande
+    col_logo, col_tit = st.columns([1, 3])
     with col_logo:
-        st.image("logo.png" if os.path.exists("logo.png") else "https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=70)
+        # Aumentamos el ancho a 120 para que destaque
+        st.image("logo.png" if os.path.exists("logo.png") else "https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=120)
     with col_tit:
         st.title("Reporte de fallas de mantenimiento")
 
@@ -58,7 +60,6 @@ if menu == "📝 Nuevo Reporte":
 
     if not df_catalogo.empty and not df_tecnicos.empty:
         with st.form("form_reporte"):
-            # FILA 1
             c1, c2, c3 = st.columns([1, 2, 1])
             id_resp = c1.text_input("ID Responsable", max_chars=5)
             
@@ -67,12 +68,11 @@ if menu == "📝 Nuevo Reporte":
             apoyo = c2.multiselect("Personal de Apoyo", nombres_lista)
             turno = c3.selectbox("Turno", ["Mañana", "Tarde", "Noche"])
 
-            # FILA 2
             c4, c5 = st.columns(2)
             celda = c4.text_input("Celda")
             robot = c5.text_input("Robot")
 
-            # FILA 3: SELECTORES DE FALLA
+            # SELECTORES DE FALLA
             c_area = df_catalogo.columns[0]
             c_tipo = df_catalogo.columns[1]
             c_cod  = df_catalogo.columns[2]
@@ -85,18 +85,16 @@ if menu == "📝 Nuevo Reporte":
             opciones = (df_f[c_cod].astype(str) + " - " + df_f[c_sub].astype(str)).tolist()
             falla_sel = st.selectbox("Código de Falla", opciones)
 
-            # FILA 4: TEXTOS
             sintoma = st.text_area("Descripción del Síntoma", height=80)
             accion = st.text_area("Acción Realizada", height=80)
 
-            # FILA 5: TIEMPOS
             st.write("**Tiempos (HHMM)**")
             t_c1, t_c2 = st.columns(2)
             ahora_num = int(datetime.now().strftime("%H%M"))
             num_ini = t_c1.number_input("Hora Inicio", value=ahora_num, step=1, format="%d")
             num_fin = t_c2.number_input("Hora Fin", value=ahora_num, step=1, format="%d")
 
-            st.write("") # Espacio en blanco real
+            st.write(" ") 
             enviar = st.form_submit_button("GUARDAR REPORTE", type="primary", use_container_width=True)
 
         if enviar:
@@ -137,7 +135,6 @@ elif menu == "📊 Estadísticas":
             df = pd.DataFrame(data)
             df.columns = [str(c).strip().upper() for c in df.columns]
             
-            # Buscar columna de tiempo muerto (asumiendo que es la penúltima)
             col_tm = next((c for c in df.columns if "TIEMPO" in c or "MINUTOS" in c), df.columns[-2])
             df[col_tm] = pd.to_numeric(df[col_tm], errors='coerce').fillna(0)
 
@@ -145,20 +142,14 @@ elif menu == "📊 Estadísticas":
             k1.metric("Total Reportes", len(df))
             k2.metric("Tiempo Muerto Total", f"{int(df[col_tm].sum())} min")
             
-            st.markdown("---")
-            
             tab1, tab2 = st.tabs(["📉 Tiempo por Robot", "🧩 Fallas Comunes"])
             
             with tab1:
-                # Buscamos columna ROBOT
                 col_rob = next((c for c in df.columns if "ROBOT" in c), "ROBOT")
-                fig1 = px.bar(df, x=col_rob, y=col_tm, color=col_rob, title="Minutos por Robot")
+                fig1 = px.bar(df, x=col_rob, y=col_tm, title="Minutos por Robot")
                 st.plotly_chart(fig1, use_container_width=True)
             
             with tab2:
-                # Buscamos columna FALLA
                 col_fal = next((c for c in df.columns if "FALLA" in c), "FALLA")
                 fig2 = px.pie(df, names=col_fal, values=col_tm, title="Distribución de Fallas")
                 st.plotly_chart(fig2, use_container_width=True)
-        else:
-            st.info("Aún no hay datos registrados.")
