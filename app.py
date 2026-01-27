@@ -47,17 +47,15 @@ df_catalogo, df_tecnicos, df_celdas_robots = cargar_datos_seguros()
 st.sidebar.title("🔧 Menú")
 menu = st.sidebar.radio("Ir a:", ["📝 Nuevo Reporte", "📊 Estadísticas"])
 
-# --- CONFIGURACIÓN INTELIGENTE DE COLUMNAS ---
+# --- CONFIGURACIÓN DE COLUMNAS ---
 if not df_catalogo.empty:
     cols = df_catalogo.columns.tolist()
-    
-    # Detección automática
     idx_area = next((i for i, c in enumerate(cols) if any(x in c for x in ['AREA', 'UBICACION'])), 0)
     idx_tipo = next((i for i, c in enumerate(cols) if any(x in c for x in ['TIPO', 'CAT']) and i != idx_area), 1)
     idx_cod = next((i for i, c in enumerate(cols) if any(x in c for x in ['COD', 'ID', 'NUM'])), 2)
     idx_desc = next((i for i, c in enumerate(cols) if any(x in c for x in ['SUB', 'MODO', 'DESC', 'SINTOMA', 'DETALLE'])), len(cols)-1)
 
-    with st.sidebar.expander("⚙️ Ajustar Columnas (Si los textos salen mal)", expanded=False):
+    with st.sidebar.expander("⚙️ Ajustar Columnas", expanded=False):
         c_area = st.selectbox("Columna ÁREA", cols, index=idx_area)
         c_tipo = st.selectbox("Columna TIPO", cols, index=idx_tipo)
         c_cod = st.selectbox("Columna CÓDIGO", cols, index=idx_cod)
@@ -73,7 +71,7 @@ if menu == "📝 Nuevo Reporte":
 
     if not df_catalogo.empty and not df_tecnicos.empty and not df_celdas_robots.empty:
         
-        # === ZONA INTERACTIVA (FUERA DEL FORMULARIO) ===
+        # === ZONA INTERACTIVA (ELEMENTOS QUE SE ACTUALIZAN AL INSTANTE) ===
         
         # 1. IDENTIFICACIÓN
         c1, c2 = st.columns(2)
@@ -97,9 +95,7 @@ if menu == "📝 Nuevo Reporte":
         turno = c3.selectbox("Turno:", ["Mañana", "Tarde", "Noche"])
         
         cc_cel, cc_rob = df_celdas_robots.columns[0], df_celdas_robots.columns[1]
-        
         celda_sel = c4.selectbox("Celda:", sorted(df_celdas_robots[cc_cel].unique()))
-        
         lista_robots = sorted(df_celdas_robots[df_celdas_robots[cc_cel] == celda_sel][cc_rob].tolist())
         robot_sel = c5.selectbox("Robot:", lista_robots)
 
@@ -107,62 +103,70 @@ if menu == "📝 Nuevo Reporte":
         prioridad = st.select_slider("Gravedad:", options=["🟢 Baja", "🟡 Media", "🔴 Alta / Crítica"], value="🟡 Media")
 
         st.markdown("---")
-        st.subheader("🛠️ Detalles de la Falla")
-
-        # 3. FALLA CON DEFAULT "MANTENIMIENTO"
-        areas_disp = sorted(df_catalogo[c_area].unique())
         
-        # --- LÓGICA DE DEFAULT ---
-        # Buscamos el índice de "MANTENIMIENTO" en la lista
+        # 3. FALLA (CON DEFAULT "MANTENIMIENTO")
+        areas_disp = sorted(df_catalogo[c_area].unique())
         index_default = 0
         try:
-            # Busca cualquier coincidencia que contenga "MANTENIMIENTO" (mayus/minus)
             index_default = next(i for i, x in enumerate(areas_disp) if "MANTENIMIENTO" in str(x).upper())
         except StopIteration:
-            index_default = 0 # Si no existe, usa el primero
+            index_default = 0
             
         area_sel = st.selectbox("Área:", areas_disp, index=index_default)
-        # -------------------------
-        
         tipos_disp = sorted(df_catalogo[df_catalogo[c_area] == area_sel][c_tipo].unique())
         tipo_sel = st.selectbox("Tipo de Falla:", tipos_disp)
         
         df_f = df_catalogo[(df_catalogo[c_area] == area_sel) & (df_catalogo[c_tipo] == tipo_sel)]
-        
-        opciones_falla = []
-        if not df_f.empty:
-            opciones_falla = (df_f[c_cod].astype(str) + " - " + df_f[c_desc].astype(str)).tolist()
-        else:
-            opciones_falla = ["No hay códigos para esta selección"]
-            
+        opciones_falla = (df_f[c_cod].astype(str) + " - " + df_f[c_desc].astype(str)).tolist() if not df_f.empty else ["Sin datos"]
         seleccion_completa = st.selectbox("Código y Descripción de Falla:", opciones_falla)
 
+        # 4. TIEMPOS Y CÁLCULO EN VIVO
+        st.write("**Tiempos de Paro (HHMM)**")
+        t1, t2 = st.columns(2)
+        
+        # Obtenemos hora actual para sugerencia
+        ahora_hhmm = int(datetime.now().strftime("%H%M"))
+        
+        # Inputs fuera del formulario para que sean interactivos
+        num_ini = t1.number_input("Hora Inicio:", value=ahora_hhmm, step=1, help="Formato 24h ej: 1430")
+        num_fin = t2.number_input("Hora Fin:", value=ahora_hhmm, step=1, help="Formato 24h ej: 1500")
 
-        # === ZONA DE CAPTURA (DENTRO DEL FORMULARIO) ===
+        # --- CÁLCULO VISUAL INMEDIATO ---
+        h_i_calc, h_f_calc = convertir_a_hora(num_ini), convertir_a_hora(num_fin)
+        dt_i_calc = datetime.combine(date.today(), h_i_calc)
+        dt_f_calc = datetime.combine(date.today(), h_f_calc)
+        
+        # Ajuste si pasa de medianoche (ej. 23:50 a 00:10)
+        if dt_f_calc < dt_i_calc:
+            dt_f_calc += timedelta(days=1)
+            
+        minutos_calc = int((dt_f_calc - dt_i_calc).total_seconds() / 60)
+        
+        # Mostramos el resultado visualmente
+        if minutos_calc > 0:
+            st.info(f"⏱️ Tiempo de paro calculado: **{minutos_calc} minutos**")
+        elif minutos_calc == 0:
+            st.warning("⚠️ El tiempo de inicio y fin es el mismo (0 min).")
+        else:
+            st.error("⚠️ Error en tiempos (Negativo).")
+
+
+        # === ZONA DE CONFIRMACIÓN (FORMULARIO) ===
         with st.form("form_final"):
             sintoma = st.text_area("Notas Adicionales del Técnico (Opcional):", height=80)
             accion = st.text_area("Acción Correctiva:", height=80)
-
-            st.write("**Tiempos (HHMM)**")
-            t1, t2 = st.columns(2)
-            ahora = int(datetime.now().strftime("%H%M"))
-            num_ini = t1.number_input("Hora Inicio:", value=ahora, step=1)
-            num_fin = t2.number_input("Hora Fin:", value=ahora, step=1)
 
             st.markdown("---")
             foto = st.camera_input("📸 Evidencia (Opcional)")
 
             enviar = st.form_submit_button("GUARDAR REPORTE", type="primary", use_container_width=True)
 
+        # === LÓGICA DE GUARDADO ===
         if enviar:
             if not id_resp:
                 st.error("⚠️ Falta número de control.")
             else:
-                h_i, h_f = convertir_a_hora(num_ini), convertir_a_hora(num_fin)
-                dt_i, dt_f = datetime.combine(date.today(), h_i), datetime.combine(date.today(), h_f)
-                if dt_f < dt_i: dt_f += timedelta(days=1)
-                minutos = int((dt_f - dt_i).total_seconds() / 60)
-                
+                # Usamos los minutos ya calculados arriba
                 evidencia = "SÍ" if foto is not None else "NO"
                 nombre_final = nom_resp if nom_resp else id_resp
 
@@ -172,18 +176,18 @@ if menu == "📝 Nuevo Reporte":
                     seleccion_completa,
                     prioridad,
                     sintoma,
-                    accion, "", "", "", evidencia, minutos, ""
+                    accion, "", "", "", evidencia, minutos_calc, ""
                 ]
 
                 hoja = conectar_google_sheet()
                 if hoja:
                     hoja.append_row(fila)
                     st.balloons()
-                    st.success(f"✅ Guardado. T.Muerto: {minutos} min")
+                    st.success(f"✅ Guardado. T.Muerto: {minutos_calc} min")
 
     else:
         st.error("⚠️ Error: Faltan archivos CSV en GitHub.")
 
 elif menu == "📊 Estadísticas":
     st.title("📊 Indicadores")
-    # Estadísticas se mantienen igual
+    # (Estadísticas se mantiene igual)
