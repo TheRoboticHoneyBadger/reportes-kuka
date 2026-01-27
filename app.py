@@ -48,29 +48,40 @@ menu = st.sidebar.radio("Ir a:", ["📝 Nuevo Reporte", "📊 Estadísticas"])
 # 📝 SECCIÓN: NUEVO REPORTE
 # ==========================================
 if menu == "📝 Nuevo Reporte":
-    # Ajuste de columnas para logo más grande
-    col_logo, col_tit = st.columns([1, 3])
-    with col_logo:
-        # Aumentamos el ancho a 120 para que destaque
-        st.image("logo.png" if os.path.exists("logo.png") else "https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=120)
-    with col_tit:
-        st.title("Reporte de fallas de mantenimiento")
-
+    # ENCABEZADO: Logo mucho más grande y centrado
+    st.image("logo.png" if os.path.exists("logo.png") else "https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=250)
+    st.title("Reporte de fallas de mantenimiento")
     st.markdown("---")
 
     if not df_catalogo.empty and not df_tecnicos.empty:
         with st.form("form_reporte"):
-            c1, c2, c3 = st.columns([1, 2, 1])
-            id_resp = c1.text_input("ID Responsable", max_chars=5)
+            # IDENTIFICACIÓN
+            c1, c2 = st.columns([1, 1])
             
-            col_nom_tec = df_tecnicos.columns[1]
-            nombres_lista = df_tecnicos[col_nom_tec].tolist()
-            apoyo = c2.multiselect("Personal de Apoyo", nombres_lista)
-            turno = c3.selectbox("Turno", ["Mañana", "Tarde", "Noche"])
+            with c1:
+                id_resp = st.text_input("Número de control responsable:", max_chars=5)
+                # Búsqueda dinámica del nombre del técnico
+                col_id_tec = df_tecnicos.columns[0]
+                col_nom_tec = df_tecnicos.columns[1]
+                nombre_tecnico_detectado = ""
+                
+                if id_resp:
+                    match = df_tecnicos[df_tecnicos[col_id_tec] == id_resp]
+                    if not match.empty:
+                        nombre_tecnico_detectado = match[col_nom_tec].iloc[0]
+                        st.success(f"👤 Técnico: {nombre_tecnico_detectado}")
+                    else:
+                        st.warning("⚠️ ID no encontrado en la base")
 
-            c4, c5 = st.columns(2)
-            celda = c4.text_input("Celda")
-            robot = c5.text_input("Robot")
+            with c2:
+                nombres_lista = df_tecnicos[col_nom_tec].tolist()
+                apoyo = st.multiselect("Personal de Apoyo:", nombres_lista)
+
+            # UBICACIÓN Y TURNO
+            c3, c4, c5 = st.columns(3)
+            turno = c3.selectbox("Turno:", ["Mañana", "Tarde", "Noche"])
+            celda = c4.text_input("Celda:")
+            robot = c5.text_input("Robot:")
 
             # SELECTORES DE FALLA
             c_area = df_catalogo.columns[0]
@@ -78,37 +89,38 @@ if menu == "📝 Nuevo Reporte":
             c_cod  = df_catalogo.columns[2]
             c_sub  = df_catalogo.columns[3]
 
-            area_sel = st.selectbox("Área", df_catalogo[c_area].unique())
-            tipo_sel = st.selectbox("Tipo de Falla", df_catalogo[df_catalogo[c_area] == area_sel][c_tipo].unique())
+            area_sel = st.selectbox("Área:", df_catalogo[c_area].unique())
+            tipo_sel = st.selectbox("Tipo de Falla:", df_catalogo[df_catalogo[c_area] == area_sel][c_tipo].unique())
 
             df_f = df_catalogo[(df_catalogo[c_area] == area_sel) & (df_catalogo[c_tipo] == tipo_sel)]
             opciones = (df_f[c_cod].astype(str) + " - " + df_f[c_sub].astype(str)).tolist()
-            falla_sel = st.selectbox("Código de Falla", opciones)
+            falla_sel = st.selectbox("Código de Falla:", opciones)
 
-            sintoma = st.text_area("Descripción del Síntoma", height=80)
-            accion = st.text_area("Acción Realizada", height=80)
+            # DESCRIPCIONES
+            sintoma = st.text_area("Descripción del Síntoma:", height=80)
+            accion = st.text_area("Acción Realizada:", height=80)
 
-            st.write("**Tiempos (HHMM)**")
+            # TIEMPOS
+            st.write("**Tiempos (Ingresa 4 dígitos, ej: 0830)**")
             t_c1, t_c2 = st.columns(2)
             ahora_num = int(datetime.now().strftime("%H%M"))
-            num_ini = t_c1.number_input("Hora Inicio", value=ahora_num, step=1, format="%d")
-            num_fin = t_c2.number_input("Hora Fin", value=ahora_num, step=1, format="%d")
+            num_ini = t_c1.number_input("Hora Inicio:", value=ahora_num, step=1, format="%d")
+            num_fin = t_c2.number_input("Hora Fin:", value=ahora_num, step=1, format="%d")
 
             st.write(" ") 
             enviar = st.form_submit_button("GUARDAR REPORTE", type="primary", use_container_width=True)
 
         if enviar:
             if not id_resp or not celda:
-                st.error("⚠️ ID y Celda obligatorios.")
+                st.error("⚠️ El número de control y la celda son obligatorios.")
             else:
                 h_i, h_f = convertir_a_hora(num_ini), convertir_a_hora(num_fin)
                 dt_i, dt_f = datetime.combine(date.today(), h_i), datetime.combine(date.today(), h_f)
                 if dt_f < dt_i: dt_f += timedelta(days=1)
                 minutos = int((dt_f - dt_i).total_seconds() / 60)
 
-                col_id_tec = df_tecnicos.columns[0]
-                match = df_tecnicos[df_tecnicos[col_id_tec] == id_resp]
-                nombre_final = match[col_nom_tec].iloc[0] if not match.empty else id_resp
+                # Usamos el nombre detectado o el ID si no hubo match
+                nombre_final = nombre_tecnico_detectado if nombre_tecnico_detectado else id_resp
 
                 fila = [
                     date.today().isocalendar()[1], date.today().strftime("%Y-%m-%d"), turno,
