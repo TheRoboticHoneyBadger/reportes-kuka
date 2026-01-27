@@ -32,7 +32,7 @@ def cargar_datos_seguros():
         df_t = pd.read_csv('tecnicos.csv', dtype=str)
         df_cr = pd.read_csv('celdas_robots.csv', dtype=str)
         
-        # Limpieza de encabezados (Mayúsculas y sin espacios extra)
+        # Limpieza: Mayúsculas y quitar espacios invisibles
         df_c.columns = [str(c).strip().upper() for c in df_c.columns]
         df_t.columns = [str(c).strip().upper() for c in df_t.columns]
         df_cr.columns = [str(c).strip().upper() for c in df_cr.columns]
@@ -47,17 +47,26 @@ df_catalogo, df_tecnicos, df_celdas_robots = cargar_datos_seguros()
 st.sidebar.title("🔧 Menú")
 menu = st.sidebar.radio("Ir a:", ["📝 Nuevo Reporte", "📊 Estadísticas"])
 
-# --- CONFIGURACIÓN DE COLUMNAS (AUTOMÁTICA) ---
+# --- CONFIGURACIÓN DE COLUMNAS (LÓGICA MEJORADA) ---
 if not df_catalogo.empty:
     cols = df_catalogo.columns.tolist()
-    # Buscamos las columnas automáticamente
-    idx_area = next((i for i, c in enumerate(cols) if "AREA" in c), 0)
-    idx_tipo = next((i for i, c in enumerate(cols) if "TIPO" in c), 1)
-    idx_cod = next((i for i, c in enumerate(cols) if "COD" in c or "ID" in c), 2)
-    idx_desc = next((i for i, c in enumerate(cols) if "DESC" in c or "FALLA" in c or "MODO" in c), 3)
+    
+    # 1. AREA: Busca 'AREA', 'UBICACION', 'MAQUINA'
+    idx_area = next((i for i, c in enumerate(cols) if any(x in c for x in ['AREA', 'UBICACION'])), 0)
+    
+    # 2. TIPO: Busca 'TIPO', 'CATEGORIA' (evitando confundirse con area)
+    idx_tipo = next((i for i, c in enumerate(cols) if any(x in c for x in ['TIPO', 'CAT']) and i != idx_area), 1)
+    
+    # 3. CÓDIGO: Busca 'COD', 'ID', 'NUM'
+    idx_cod = next((i for i, c in enumerate(cols) if any(x in c for x in ['COD', 'ID', 'NUM'])), 2)
+    
+    # 4. DESCRIPCIÓN: Busca 'SUB', 'MODO', 'DESC', 'SINTOMA'. 
+    # TRUCO: Si no encuentra, usa la ULTIMA columna, que suele ser la descripción.
+    idx_desc = next((i for i, c in enumerate(cols) if any(x in c for x in ['SUB', 'MODO', 'DESC', 'SINTOMA', 'DETALLE'])), len(cols)-1)
 
-    # Opción manual oculta en el sidebar por si acaso
-    with st.sidebar.expander("⚙️ Ajustar Columnas (Opcional)", expanded=False):
+    # Sidebar para corrección manual
+    with st.sidebar.expander("⚙️ Configurar Columnas (Si sale mal)", expanded=True):
+        st.caption("Si la descripción se repite, cambia la columna aquí:")
         c_area = st.selectbox("Columna ÁREA", cols, index=idx_area)
         c_tipo = st.selectbox("Columna TIPO", cols, index=idx_tipo)
         c_cod = st.selectbox("Columna CÓDIGO", cols, index=idx_cod)
@@ -70,6 +79,15 @@ if menu == "📝 Nuevo Reporte":
     st.image("logo.png" if os.path.exists("logo.png") else "https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=300)
     st.title("Reporte de fallas de mantenimiento")
     st.markdown("---")
+
+    # --- INSPECTOR DE DATOS (PARA QUE VEAS QUÉ ESTÁ LEYENDO) ---
+    with st.expander("👀 Ver mis datos reales (Ayuda para depurar)"):
+        if not df_catalogo.empty:
+            st.write("Así está leyendo Python tu archivo Excel:")
+            st.dataframe(df_catalogo.head(3))
+            st.info(f"El programa cree que la descripción está en la columna: **{c_desc}**")
+        else:
+            st.error("No se cargó el archivo CSV.")
 
     if not df_catalogo.empty and not df_tecnicos.empty and not df_celdas_robots.empty:
         with st.form("form_reporte"):
@@ -100,26 +118,30 @@ if menu == "📝 Nuevo Reporte":
             st.write("**Prioridad de la Falla**")
             prioridad = st.select_slider("Gravedad:", options=["🟢 Baja", "🟡 Media", "🔴 Alta / Crítica"], value="🟡 Media")
 
-            # 3. FALLA (CÓDIGO + DESCRIPCIÓN EN EL MISMO LISTADO)
+            # 3. FALLA (CORREGIDO)
             areas_disp = df_catalogo[c_area].unique()
             area_sel = st.selectbox("Área:", areas_disp)
             
             tipos_disp = df_catalogo[df_catalogo[c_area] == area_sel][c_tipo].unique()
             tipo_sel = st.selectbox("Tipo de Falla:", tipos_disp)
             
-            # Filtramos el catálogo
+            # Filtro
             df_f = df_catalogo[(df_catalogo[c_area] == area_sel) & (df_catalogo[c_tipo] == tipo_sel)]
             
-            # AQUÍ ESTÁ LA MAGIA: Concatenamos "CODIGO - DESCRIPCION"
+            # GENERACIÓN DE LISTA
+            # Aquí forzamos que si falla la concatenación, muestre al menos algo útil
+            opciones = []
             if not df_f.empty:
-                opciones = (df_f[c_cod].astype(str) + " - " + df_f[c_desc].astype(str)).tolist()
+                try:
+                    opciones = (df_f[c_cod].astype(str) + " - " + df_f[c_desc].astype(str)).tolist()
+                except:
+                    opciones = df_f[c_cod].astype(str).tolist()
             else:
-                opciones = ["Sin datos"]
+                opciones = ["No hay fallas registradas para este tipo"]
             
-            # El usuario ve todo junto en la lista
             seleccion_completa = st.selectbox("Código y Descripción de Falla:", opciones)
 
-            # 4. NOTAS ADICIONALES
+            # 4. NOTAS
             sintoma = st.text_area("Notas Adicionales del Técnico (Opcional):", height=80)
             accion = st.text_area("Acción Correctiva:", height=80)
 
@@ -152,7 +174,7 @@ if menu == "📝 Nuevo Reporte":
                 fila = [
                     date.today().isocalendar()[1], date.today().strftime("%Y-%m-%d"), turno,
                     nom_final, ", ".join(apoyo), celda_sel, robot_sel, 
-                    seleccion_completa, # Se guarda "CODIGO - DESCRIPCION" completo
+                    seleccion_completa,
                     prioridad,
                     sintoma,
                     accion, "", "", "", evidencia, minutos, ""
@@ -164,9 +186,6 @@ if menu == "📝 Nuevo Reporte":
                     st.balloons()
                     st.success(f"✅ Guardado. T.Muerto: {minutos} min")
 
-    else:
-        st.error("⚠️ Error cargando archivos CSV. Verifica en GitHub.")
-
 elif menu == "📊 Estadísticas":
     st.title("📊 Indicadores")
-    # (El código de estadísticas se mantiene igual)
+    # Código de estadísticas (se mantiene igual)
