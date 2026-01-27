@@ -71,7 +71,7 @@ if menu == "📝 Nuevo Reporte":
 
     if not df_catalogo.empty and not df_tecnicos.empty and not df_celdas_robots.empty:
         
-        # === ZONA INTERACTIVA (ELEMENTOS QUE SE ACTUALIZAN AL INSTANTE) ===
+        # === ZONA INTERACTIVA ===
         
         # 1. IDENTIFICACIÓN
         c1, c2 = st.columns(2)
@@ -104,7 +104,7 @@ if menu == "📝 Nuevo Reporte":
 
         st.markdown("---")
         
-        # 3. FALLA (CON DEFAULT "MANTENIMIENTO")
+        # 3. FALLA (DEFAULT "MANTENIMIENTO")
         areas_disp = sorted(df_catalogo[c_area].unique())
         index_default = 0
         try:
@@ -120,53 +120,44 @@ if menu == "📝 Nuevo Reporte":
         opciones_falla = (df_f[c_cod].astype(str) + " - " + df_f[c_desc].astype(str)).tolist() if not df_f.empty else ["Sin datos"]
         seleccion_completa = st.selectbox("Código y Descripción de Falla:", opciones_falla)
 
-        # 4. TIEMPOS Y CÁLCULO EN VIVO
+        # 4. CÁLCULO DE TIEMPO
         st.write("**Tiempos de Paro (HHMM)**")
         t1, t2 = st.columns(2)
-        
-        # Obtenemos hora actual para sugerencia
         ahora_hhmm = int(datetime.now().strftime("%H%M"))
         
-        # Inputs fuera del formulario para que sean interactivos
-        num_ini = t1.number_input("Hora Inicio:", value=ahora_hhmm, step=1, help="Formato 24h ej: 1430")
-        num_fin = t2.number_input("Hora Fin:", value=ahora_hhmm, step=1, help="Formato 24h ej: 1500")
+        num_ini = t1.number_input("Hora Inicio:", value=ahora_hhmm, step=1)
+        num_fin = t2.number_input("Hora Fin:", value=ahora_hhmm, step=1)
 
-        # --- CÁLCULO VISUAL INMEDIATO ---
         h_i_calc, h_f_calc = convertir_a_hora(num_ini), convertir_a_hora(num_fin)
         dt_i_calc = datetime.combine(date.today(), h_i_calc)
         dt_f_calc = datetime.combine(date.today(), h_f_calc)
         
-        # Ajuste si pasa de medianoche (ej. 23:50 a 00:10)
-        if dt_f_calc < dt_i_calc:
-            dt_f_calc += timedelta(days=1)
-            
+        if dt_f_calc < dt_i_calc: dt_f_calc += timedelta(days=1)
         minutos_calc = int((dt_f_calc - dt_i_calc).total_seconds() / 60)
         
-        # Mostramos el resultado visualmente
         if minutos_calc > 0:
-            st.info(f"⏱️ Tiempo de paro calculado: **{minutos_calc} minutos**")
+            st.info(f"⏱️ Tiempo de paro: **{minutos_calc} minutos**")
         elif minutos_calc == 0:
-            st.warning("⚠️ El tiempo de inicio y fin es el mismo (0 min).")
+            st.warning("⚠️ 0 min")
         else:
-            st.error("⚠️ Error en tiempos (Negativo).")
+            st.error("⚠️ Error en tiempos")
 
 
-        # === ZONA DE CONFIRMACIÓN (FORMULARIO) ===
+        # === ZONA DE CAPTURA ===
         with st.form("form_final"):
             sintoma = st.text_area("Notas Adicionales del Técnico (Opcional):", height=80)
             accion = st.text_area("Acción Correctiva:", height=80)
 
             st.markdown("---")
-            foto = st.camera_input("📸 Evidencia (Opcional)")
+            # CAMBIO AQUÍ: Usamos file_uploader en lugar de camera_input
+            foto = st.file_uploader("📂 Subir Evidencia (Foto de Galería)", type=["jpg", "png", "jpeg"])
 
             enviar = st.form_submit_button("GUARDAR REPORTE", type="primary", use_container_width=True)
 
-        # === LÓGICA DE GUARDADO ===
         if enviar:
             if not id_resp:
                 st.error("⚠️ Falta número de control.")
             else:
-                # Usamos los minutos ya calculados arriba
                 evidencia = "SÍ" if foto is not None else "NO"
                 nombre_final = nom_resp if nom_resp else id_resp
 
@@ -190,4 +181,4 @@ if menu == "📝 Nuevo Reporte":
 
 elif menu == "📊 Estadísticas":
     st.title("📊 Indicadores")
-    # (Estadísticas se mantiene igual)
+    # Estadísticas se mantiene igual
