@@ -51,13 +51,12 @@ menu = st.sidebar.radio("Ir a:", ["📝 Nuevo Reporte", "📊 Estadísticas"])
 if not df_catalogo.empty:
     cols = df_catalogo.columns.tolist()
     
-    # Detección automática de columnas
+    # Detección automática
     idx_area = next((i for i, c in enumerate(cols) if any(x in c for x in ['AREA', 'UBICACION'])), 0)
     idx_tipo = next((i for i, c in enumerate(cols) if any(x in c for x in ['TIPO', 'CAT']) and i != idx_area), 1)
     idx_cod = next((i for i, c in enumerate(cols) if any(x in c for x in ['COD', 'ID', 'NUM'])), 2)
     idx_desc = next((i for i, c in enumerate(cols) if any(x in c for x in ['SUB', 'MODO', 'DESC', 'SINTOMA', 'DETALLE'])), len(cols)-1)
 
-    # Sidebar para ajustes manuales si falla la detección
     with st.sidebar.expander("⚙️ Ajustar Columnas (Si los textos salen mal)", expanded=False):
         c_area = st.selectbox("Columna ÁREA", cols, index=idx_area)
         c_tipo = st.selectbox("Columna TIPO", cols, index=idx_tipo)
@@ -75,13 +74,11 @@ if menu == "📝 Nuevo Reporte":
     if not df_catalogo.empty and not df_tecnicos.empty and not df_celdas_robots.empty:
         
         # === ZONA INTERACTIVA (FUERA DEL FORMULARIO) ===
-        # Al estar fuera del form, estos campos actualizan la página al instante
         
         # 1. IDENTIFICACIÓN
         c1, c2 = st.columns(2)
         with c1:
             id_resp = st.text_input("Número de control responsable:", max_chars=5)
-            # Lógica para mostrar nombre del técnico
             col_id_t, col_nom_t = df_tecnicos.columns[0], df_tecnicos.columns[1]
             nom_resp = ""
             if id_resp:
@@ -95,50 +92,53 @@ if menu == "📝 Nuevo Reporte":
         with c2:
             apoyo = st.multiselect("Personal de Apoyo:", sorted(df_tecnicos[col_nom_t].tolist()))
 
-        # 2. UBICACIÓN (CASCADA INTELIGENTE: Celda -> Robot)
+        # 2. UBICACIÓN
         c3, c4, c5 = st.columns(3)
         turno = c3.selectbox("Turno:", ["Mañana", "Tarde", "Noche"])
         
         cc_cel, cc_rob = df_celdas_robots.columns[0], df_celdas_robots.columns[1]
         
-        # Filtro 1: Seleccionar Celda
         celda_sel = c4.selectbox("Celda:", sorted(df_celdas_robots[cc_cel].unique()))
         
-        # Filtro 2: Robots filtrados por esa Celda
         lista_robots = sorted(df_celdas_robots[df_celdas_robots[cc_cel] == celda_sel][cc_rob].tolist())
         robot_sel = c5.selectbox("Robot:", lista_robots)
 
-        # Semáforo de Prioridad
         st.write("**Prioridad de la Falla**")
         prioridad = st.select_slider("Gravedad:", options=["🟢 Baja", "🟡 Media", "🔴 Alta / Crítica"], value="🟡 Media")
 
         st.markdown("---")
         st.subheader("🛠️ Detalles de la Falla")
 
-        # 3. FALLA (CASCADA INTELIGENTE: Área -> Tipo -> Falla)
-        # Filtro A: Área
+        # 3. FALLA CON DEFAULT "MANTENIMIENTO"
         areas_disp = sorted(df_catalogo[c_area].unique())
-        area_sel = st.selectbox("Área:", areas_disp)
         
-        # Filtro B: Tipos (Solo los que pertenecen a esa Área)
+        # --- LÓGICA DE DEFAULT ---
+        # Buscamos el índice de "MANTENIMIENTO" en la lista
+        index_default = 0
+        try:
+            # Busca cualquier coincidencia que contenga "MANTENIMIENTO" (mayus/minus)
+            index_default = next(i for i, x in enumerate(areas_disp) if "MANTENIMIENTO" in str(x).upper())
+        except StopIteration:
+            index_default = 0 # Si no existe, usa el primero
+            
+        area_sel = st.selectbox("Área:", areas_disp, index=index_default)
+        # -------------------------
+        
         tipos_disp = sorted(df_catalogo[df_catalogo[c_area] == area_sel][c_tipo].unique())
         tipo_sel = st.selectbox("Tipo de Falla:", tipos_disp)
         
-        # Filtro C: Códigos y Descripciones (Solo los de ese Área y Tipo)
         df_f = df_catalogo[(df_catalogo[c_area] == area_sel) & (df_catalogo[c_tipo] == tipo_sel)]
         
         opciones_falla = []
         if not df_f.empty:
-            # Concatenamos Código y Descripción para que se vea claro
             opciones_falla = (df_f[c_cod].astype(str) + " - " + df_f[c_desc].astype(str)).tolist()
         else:
-            opciones_falla = ["No hay códigos registrados para esta selección"]
+            opciones_falla = ["No hay códigos para esta selección"]
             
         seleccion_completa = st.selectbox("Código y Descripción de Falla:", opciones_falla)
 
 
         # === ZONA DE CAPTURA (DENTRO DEL FORMULARIO) ===
-        # Esto agrupa los campos de texto para que no recarguen la página mientras escribes
         with st.form("form_final"):
             sintoma = st.text_area("Notas Adicionales del Técnico (Opcional):", height=80)
             accion = st.text_area("Acción Correctiva:", height=80)
@@ -152,10 +152,8 @@ if menu == "📝 Nuevo Reporte":
             st.markdown("---")
             foto = st.camera_input("📸 Evidencia (Opcional)")
 
-            # BOTÓN FINAL
             enviar = st.form_submit_button("GUARDAR REPORTE", type="primary", use_container_width=True)
 
-        # === LÓGICA DE GUARDADO ===
         if enviar:
             if not id_resp:
                 st.error("⚠️ Falta número de control.")
@@ -171,7 +169,7 @@ if menu == "📝 Nuevo Reporte":
                 fila = [
                     date.today().isocalendar()[1], date.today().strftime("%Y-%m-%d"), turno,
                     nombre_final, ", ".join(apoyo), celda_sel, robot_sel, 
-                    seleccion_completa, # Guardamos todo el texto "COD - DESC"
+                    seleccion_completa,
                     prioridad,
                     sintoma,
                     accion, "", "", "", evidencia, minutos, ""
@@ -188,4 +186,4 @@ if menu == "📝 Nuevo Reporte":
 
 elif menu == "📊 Estadísticas":
     st.title("📊 Indicadores")
-    # (Tu código de estadísticas sigue aquí igual)
+    # Estadísticas se mantienen igual
