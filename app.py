@@ -34,7 +34,6 @@ def cargar_datos_seguros():
         df_t = pd.read_csv('tecnicos.csv', dtype=str)
         df_cr = pd.read_csv('celdas_robots.csv', dtype=str)
         
-        # Limpieza de encabezados para evitar KeyErrors
         df_c.columns = [str(c).strip().upper() for c in df_c.columns]
         df_t.columns = [str(c).strip().upper() for c in df_t.columns]
         df_cr.columns = [str(c).strip().upper() for c in df_cr.columns]
@@ -50,7 +49,6 @@ st.sidebar.title("🔧 Menú")
 menu = st.sidebar.radio("Ir a:", ["📝 Nuevo Reporte", "📊 Estadísticas"])
 
 if menu == "📝 Nuevo Reporte":
-    # Logo Grande
     st.image("logo.png" if os.path.exists("logo.png") else "https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=300)
     st.title("Reporte de fallas de mantenimiento")
     st.markdown("---")
@@ -61,7 +59,6 @@ if menu == "📝 Nuevo Reporte":
             c1, c2 = st.columns(2)
             with c1:
                 id_resp = st.text_input("Número de control responsable:", max_chars=5)
-                # Búsqueda de nombre por posición de columna
                 col_id_t, col_nom_t = df_tecnicos.columns[0], df_tecnicos.columns[1]
                 nombre_tec = ""
                 if id_resp:
@@ -80,7 +77,15 @@ if menu == "📝 Nuevo Reporte":
             celda_sel = c4.selectbox("Celda:", sorted(df_celdas_robots[c_cel].unique()))
             robot_sel = c5.selectbox("Robot:", sorted(df_celdas_robots[df_celdas_robots[c_cel] == celda_sel][c_rob].tolist()))
 
-            # FALLA (Búsqueda por posición para evitar el KeyError)
+            # SEMÁFORO DE PRIORIDAD
+            st.write("**Prioridad de la Falla (Semáforo)**")
+            prioridad = st.select_slider(
+                "Desliza para seleccionar la gravedad:",
+                options=["🟢 Baja", "🟡 Media", "🔴 Alta / Crítica"],
+                value="🟡 Media"
+            )
+
+            # FALLA
             f_area, f_tipo, f_cod, f_sub = df_catalogo.columns[0], df_catalogo.columns[1], df_catalogo.columns[2], df_catalogo.columns[3]
             area_sel = st.selectbox("Área:", df_catalogo[f_area].unique())
             tipo_sel = st.selectbox("Tipo de Falla:", df_catalogo[df_catalogo[f_area] == area_sel][f_tipo].unique())
@@ -117,9 +122,10 @@ if menu == "📝 Nuevo Reporte":
                 evidencia = "SÍ" if foto is not None else "NO"
                 nombre_final = nombre_tec if nombre_tec else id_resp
 
+                # Fila para Google Sheets: Prioridad guardada en la columna vacía después de la falla
                 fila = [
                     date.today().isocalendar()[1], date.today().strftime("%Y-%m-%d"), turno,
-                    nombre_final, ", ".join(apoyo), celda_sel, robot_sel, falla_sel, "",
+                    nombre_final, ", ".join(apoyo), celda_sel, robot_sel, falla_sel, prioridad,
                     sintoma, accion, "", "", "", evidencia, minutos, ""
                 ]
 
@@ -127,4 +133,4 @@ if menu == "📝 Nuevo Reporte":
                 if hoja:
                     hoja.append_row(fila)
                     st.balloons()
-                    st.success(f"✅ Reporte guardado. Tiempo: {minutos} min. Foto: {evidencia}")
+                    st.success(f"✅ Guardado. Prioridad: {prioridad}. Tiempo: {minutos} min.")
