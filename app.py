@@ -26,7 +26,7 @@ def convertir_a_hora(valor):
     except:
         return time(0, 0)
 
-# --- CARGA DE DATOS ---
+# --- CARGA DE DATOS SEGURA ---
 @st.cache_data
 def cargar_datos_seguros():
     try:
@@ -34,6 +34,7 @@ def cargar_datos_seguros():
         df_t = pd.read_csv('tecnicos.csv', dtype=str)
         df_cr = pd.read_csv('celdas_robots.csv', dtype=str)
         
+        # Limpieza de encabezados para evitar KeyErrors
         df_c.columns = [str(c).strip().upper() for c in df_c.columns]
         df_t.columns = [str(c).strip().upper() for c in df_t.columns]
         df_cr.columns = [str(c).strip().upper() for c in df_cr.columns]
@@ -49,59 +50,58 @@ st.sidebar.title("🔧 Menú")
 menu = st.sidebar.radio("Ir a:", ["📝 Nuevo Reporte", "📊 Estadísticas"])
 
 if menu == "📝 Nuevo Reporte":
+    # Logo Grande
     st.image("logo.png" if os.path.exists("logo.png") else "https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=300)
     st.title("Reporte de fallas de mantenimiento")
     st.markdown("---")
 
     if not df_catalogo.empty and not df_tecnicos.empty and not df_celdas_robots.empty:
-        col_id_tec = df_tecnicos.columns[0]
-        col_nom_tec = df_tecnicos.columns[1]
-        nombres_lista = sorted(df_tecnicos[col_nom_tec].tolist())
-
         with st.form("form_reporte"):
             # IDENTIFICACIÓN
-            c1, c2 = st.columns([1, 1])
+            c1, c2 = st.columns(2)
             with c1:
                 id_resp = st.text_input("Número de control responsable:", max_chars=5)
-                nombre_tecnico_detectado = ""
+                # Búsqueda de nombre por posición de columna
+                col_id_t, col_nom_t = df_tecnicos.columns[0], df_tecnicos.columns[1]
+                nombre_tec = ""
                 if id_resp:
-                    match = df_tecnicos[df_tecnicos[col_id_tec] == id_resp]
-                    if not match.empty:
-                        nombre_tecnico_detectado = match[col_nom_tec].iloc[0]
-                        st.markdown(f"**👤 Técnico:** `{nombre_tecnico_detectado}`")
+                    m = df_tecnicos[df_tecnicos[col_id_t] == id_resp]
+                    if not m.empty:
+                        nombre_tec = m[col_nom_t].iloc[0]
+                        st.markdown(f"**👤 Técnico:** `{nombre_tec}`")
+
             with c2:
-                apoyo = st.multiselect("Personal de Apoyo (Busca por nombre):", options=nombres_lista)
+                apoyo = st.multiselect("Personal de Apoyo:", sorted(df_tecnicos[col_nom_t].tolist()))
 
             # UBICACIÓN DINÁMICA
             c3, c4, c5 = st.columns(3)
             turno = c3.selectbox("Turno:", ["Mañana", "Tarde", "Noche"])
-            col_celda = df_celdas_robots.columns[0]
-            col_robot = df_celdas_robots.columns[1]
-            celda_sel = c4.selectbox("Celda:", sorted(df_celdas_robots[col_celda].unique()))
-            robots_filtrados = df_celdas_robots[df_celdas_robots[col_celda] == celda_sel][col_robot].tolist()
-            robot_sel = c5.selectbox("Robot:", sorted(robots_filtrados))
+            c_cel, c_rob = df_celdas_robots.columns[0], df_celdas_robots.columns[1]
+            celda_sel = c4.selectbox("Celda:", sorted(df_celdas_robots[c_cel].unique()))
+            robot_sel = c5.selectbox("Robot:", sorted(df_celdas_robots[df_celdas_robots[c_cel] == celda_sel][c_rob].tolist()))
 
-            # SELECTORES DE FALLA
-            area_sel = st.selectbox("Área:", df_catalogo['AREA'].unique())
-            tipo_sel = st.selectbox("Tipo de Falla:", df_catalogo[df_catalogo['AREA'] == area_sel]['TIPO'].unique())
-            df_f = df_catalogo[(df_catalogo['AREA'] == area_sel) & (df_catalogo['TIPO'] == tipo_sel)]
-            opciones_falla = (df_f['CODIGO DE FALLO'] + " - " + df_f['SUB MODO DE FALLA']).tolist()
-            falla_sel = st.selectbox("Código de Falla:", opciones_falla)
+            # FALLA (Búsqueda por posición para evitar el KeyError)
+            f_area, f_tipo, f_cod, f_sub = df_catalogo.columns[0], df_catalogo.columns[1], df_catalogo.columns[2], df_catalogo.columns[3]
+            area_sel = st.selectbox("Área:", df_catalogo[f_area].unique())
+            tipo_sel = st.selectbox("Tipo de Falla:", df_catalogo[df_catalogo[f_area] == area_sel][f_tipo].unique())
+            
+            df_f = df_catalogo[(df_catalogo[f_area] == area_sel) & (df_catalogo[f_tipo] == tipo_sel)]
+            opciones_f = (df_f[f_cod].astype(str) + " - " + df_f[f_sub].astype(str)).tolist()
+            falla_sel = st.selectbox("Código de Falla:", opciones_f)
 
             sintoma = st.text_area("Descripción / Síntoma:", height=80)
             accion = st.text_area("Acción Correctiva:", height=80)
 
             # TIEMPOS
-            st.write("**Tiempos (Formato 4 dígitos: HHMM)**")
-            t_c1, t_c2 = st.columns(2)
-            ahora_num = int(datetime.now().strftime("%H%M"))
-            num_ini = t_c1.number_input("Hora Inicio:", value=ahora_num, step=1, format="%d")
-            num_fin = t_c2.number_input("Hora Fin:", value=ahora_num, step=1, format="%d")
+            st.write("**Tiempos (HHMM)**")
+            t1, t2 = st.columns(2)
+            ahora = int(datetime.now().strftime("%H%M"))
+            num_ini = t1.number_input("Hora Inicio:", value=ahora, step=1, format="%d")
+            num_fin = t2.number_input("Hora Fin:", value=ahora, step=1, format="%d")
 
-            # --- NUEVO: CÁMARA DE EVIDENCIA ---
-            st.write("---")
-            st.write("**📸 Evidencia Fotográfica**")
-            foto = st.camera_input("Tomar foto de la falla (Opcional)")
+            # CÁMARA
+            st.markdown("---")
+            foto = st.camera_input("📸 Evidencia fotográfica (Opcional)")
 
             enviar = st.form_submit_button("GUARDAR REPORTE", type="primary", use_container_width=True)
 
@@ -113,25 +113,18 @@ if menu == "📝 Nuevo Reporte":
                 dt_i, dt_f = datetime.combine(date.today(), h_i), datetime.combine(date.today(), h_f)
                 if dt_f < dt_i: dt_f += timedelta(days=1)
                 minutos = int((dt_f - dt_i).total_seconds() / 60)
-
-                nombre_final = nombre_tecnico_detectado if nombre_tecnico_detectado else id_resp
                 
-                # Nota: Guardar fotos en Google Sheets directamente es complejo, 
-                # por ahora registraremos si se tomó o no evidencia.
-                tiene_foto = "SÍ" if foto is not None else "NO"
+                evidencia = "SÍ" if foto is not None else "NO"
+                nombre_final = nombre_tec if nombre_tec else id_resp
 
                 fila = [
                     date.today().isocalendar()[1], date.today().strftime("%Y-%m-%d"), turno,
                     nombre_final, ", ".join(apoyo), celda_sel, robot_sel, falla_sel, "",
-                    sintoma, accion, "", "", "", tiene_foto, minutos, ""
+                    sintoma, accion, "", "", "", evidencia, minutos, ""
                 ]
 
                 hoja = conectar_google_sheet()
                 if hoja:
                     hoja.append_row(fila)
                     st.balloons()
-                    st.success(f"✅ Guardado. Tiempo muerto: {minutos} min. Evidencia: {tiene_foto}")
-
-elif menu == "📊 Estadísticas":
-    st.title("📊 Indicadores de Mantenimiento")
-    # ... (Aquí va el código de gráficas que ya tenemos)
+                    st.success(f"✅ Reporte guardado. Tiempo: {minutos} min. Foto: {evidencia}")
