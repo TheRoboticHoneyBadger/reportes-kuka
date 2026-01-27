@@ -48,34 +48,40 @@ menu = st.sidebar.radio("Ir a:", ["📝 Nuevo Reporte", "📊 Estadísticas"])
 # 📝 SECCIÓN: NUEVO REPORTE
 # ==========================================
 if menu == "📝 Nuevo Reporte":
-    # ENCABEZADO: Logo mucho más grande y centrado
-    st.image("logo.png" if os.path.exists("logo.png") else "https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=250)
+    # Logo ampliado
+    st.image("logo.png" if os.path.exists("logo.png") else "https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=300)
     st.title("Reporte de fallas de mantenimiento")
     st.markdown("---")
 
     if not df_catalogo.empty and not df_tecnicos.empty:
+        # Definimos las columnas de técnicos una sola vez
+        col_id_tec = df_tecnicos.columns[0]
+        col_nom_tec = df_tecnicos.columns[1]
+        nombres_lista = sorted(df_tecnicos[col_nom_tec].tolist())
+
         with st.form("form_reporte"):
-            # IDENTIFICACIÓN
+            # IDENTIFICACIÓN Y APOYO
             c1, c2 = st.columns([1, 1])
             
             with c1:
+                # Buscador por Número de Control
                 id_resp = st.text_input("Número de control responsable:", max_chars=5)
-                # Búsqueda dinámica del nombre del técnico
-                col_id_tec = df_tecnicos.columns[0]
-                col_nom_tec = df_tecnicos.columns[1]
                 nombre_tecnico_detectado = ""
-                
                 if id_resp:
                     match = df_tecnicos[df_tecnicos[col_id_tec] == id_resp]
                     if not match.empty:
                         nombre_tecnico_detectado = match[col_nom_tec].iloc[0]
-                        st.success(f"👤 Técnico: {nombre_tecnico_detectado}")
+                        st.markdown(f"**👤 Técnico:** `{nombre_tecnico_detectado}`")
                     else:
-                        st.warning("⚠️ ID no encontrado en la base")
+                        st.warning("⚠️ ID no encontrado")
 
             with c2:
-                nombres_lista = df_tecnicos[col_nom_tec].tolist()
-                apoyo = st.multiselect("Personal de Apoyo:", nombres_lista)
+                # BUSCADOR INTELIGENTE: Multiselect con búsqueda habilitada
+                apoyo = st.multiselect(
+                    "Personal de Apoyo (Busca por nombre):", 
+                    options=nombres_lista,
+                    help="Escribe el nombre para filtrar rápido"
+                )
 
             # UBICACIÓN Y TURNO
             c3, c4, c5 = st.columns(3)
@@ -93,15 +99,15 @@ if menu == "📝 Nuevo Reporte":
             tipo_sel = st.selectbox("Tipo de Falla:", df_catalogo[df_catalogo[c_area] == area_sel][c_tipo].unique())
 
             df_f = df_catalogo[(df_catalogo[c_area] == area_sel) & (df_catalogo[c_tipo] == tipo_sel)]
-            opciones = (df_f[c_cod].astype(str) + " - " + df_f[c_sub].astype(str)).tolist()
-            falla_sel = st.selectbox("Código de Falla:", opciones)
+            opciones_falla = (df_f[c_cod].astype(str) + " - " + df_f[c_sub].astype(str)).tolist()
+            falla_sel = st.selectbox("Código de Falla:", opciones_falla)
 
             # DESCRIPCIONES
             sintoma = st.text_area("Descripción del Síntoma:", height=80)
             accion = st.text_area("Acción Realizada:", height=80)
 
             # TIEMPOS
-            st.write("**Tiempos (Ingresa 4 dígitos, ej: 0830)**")
+            st.write("**Tiempos (Formato 4 dígitos, ej: 0830)**")
             t_c1, t_c2 = st.columns(2)
             ahora_num = int(datetime.now().strftime("%H%M"))
             num_ini = t_c1.number_input("Hora Inicio:", value=ahora_num, step=1, format="%d")
@@ -119,7 +125,6 @@ if menu == "📝 Nuevo Reporte":
                 if dt_f < dt_i: dt_f += timedelta(days=1)
                 minutos = int((dt_f - dt_i).total_seconds() / 60)
 
-                # Usamos el nombre detectado o el ID si no hubo match
                 nombre_final = nombre_tecnico_detectado if nombre_tecnico_detectado else id_resp
 
                 fila = [
@@ -132,7 +137,7 @@ if menu == "📝 Nuevo Reporte":
                 if hoja:
                     hoja.append_row(fila)
                     st.balloons()
-                    st.success(f"✅ Guardado. Tiempo muerto: {minutos} min")
+                    st.success(f"✅ Reporte guardado. Tiempo muerto: {minutos} min")
 
 # ==========================================
 # 📊 SECCIÓN: ESTADÍSTICAS
@@ -158,7 +163,7 @@ elif menu == "📊 Estadísticas":
             
             with tab1:
                 col_rob = next((c for c in df.columns if "ROBOT" in c), "ROBOT")
-                fig1 = px.bar(df, x=col_rob, y=col_tm, title="Minutos por Robot")
+                fig1 = px.bar(df, x=col_rob, y=col_tm, title="Minutos por Robot", color=col_rob)
                 st.plotly_chart(fig1, use_container_width=True)
             
             with tab2:
