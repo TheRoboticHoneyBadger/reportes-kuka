@@ -112,8 +112,21 @@ if menu == "📝 Nuevo Reporte":
             lista_robots = sorted(df_celdas_robots[df_celdas_robots[cc_cel] == celda_sel][cc_rob].tolist())
             robot_sel = c_r.selectbox("Robot:", lista_robots)
 
-            st.write("**Prioridad de la Falla**")
-            prioridad = st.select_slider("Gravedad:", options=["🟢 Baja", "🟡 Media", "🔴 Alta / Crítica"], value="🟡 Media")
+            # --- NUEVA BARRA DE ESTATUS ---
+            st.write("**Estatus de la Reparación**")
+            estatus_label = st.select_slider(
+                "Seleccione el avance:",
+                options=["🛑 Sin Avance", "⏳ En Proceso", "✅ Cerrado"],
+                value="✅ Cerrado" # Default en Cerrado
+            )
+            
+            # Mapeo de Texto a Número para Excel
+            mapa_estatus = {
+                "🛑 Sin Avance": 0,
+                "⏳ En Proceso": 1,
+                "✅ Cerrado": 2
+            }
+            estatus_valor = mapa_estatus[estatus_label]
 
             st.markdown("---")
             
@@ -130,8 +143,6 @@ if menu == "📝 Nuevo Reporte":
             tipo_sel = st.selectbox("Tipo de Falla:", tipos_disp)
             
             df_f = df_catalogo[(df_catalogo[c_area] == area_sel) & (df_catalogo[c_tipo] == tipo_sel)]
-            
-            # Concatenamos visualmente: "E01 - FALLA DE MOTOR"
             opciones_falla = (df_f[c_cod].astype(str) + " - " + df_f[c_desc].astype(str)).tolist() if not df_f.empty else ["Sin datos"]
             seleccion_completa = st.selectbox("Código y Descripción de Falla:", opciones_falla)
 
@@ -170,17 +181,15 @@ if menu == "📝 Nuevo Reporte":
                     evidencia = "SÍ" if foto is not None else "NO"
                     nombre_final = nom_resp if nom_resp else id_resp
                     
-                    # === MAGIA DE SEPARACIÓN ===
-                    # Aquí separamos lo que el usuario eligió en dos variables distintas
+                    # Separación de Código y Descripción
                     codigo_final = seleccion_completa
                     descripcion_final = "Descripción no disponible"
-                    
                     if " - " in seleccion_completa:
                         partes = seleccion_completa.split(" - ", 1)
-                        codigo_final = partes[0]      # "E01"
-                        descripcion_final = partes[1] # "FALLA DE MOTOR"
+                        codigo_final = partes[0]
+                        descripcion_final = partes[1]
 
-                    # === FILA CON EL ORDEN SOLICITADO ===
+                    # --- FILA FINAL CON ESTATUS (VALOR NUMÉRICO) ---
                     fila = [
                         date.today().isocalendar()[1],      # 1. SEMANA
                         date.today().strftime("%Y-%m-%d"),  # 2. FECHA
@@ -189,15 +198,15 @@ if menu == "📝 Nuevo Reporte":
                         ", ".join(apoyo),                   # 5. APOYO
                         celda_sel,                          # 6. CELDA
                         robot_sel,                          # 7. ROBOT
-                        codigo_final,                       # 8. CÓDIGO DE FALLO (Solo el código)
-                        tipo_sel,                           # 9. TIPO DE FALLA (Categoría)
-                        descripcion_final,                  # 10. DESCRIPCIÓN DE FALLA (Texto automático del catálogo)
-                        sintoma,                            # 11. ACTIVIDAD (Manual)
-                        accion,                             # 12. SOLUCIÓN (Manual)
-                        num_orden,                          # 13. NÚMERO DE ORDEN
-                        prioridad,                          # 14. PRIORIDAD
-                        minutos_calc,                       # 15. TIEMPO MUERTO
-                        evidencia                           # 16. EVIDENCIA
+                        codigo_final,                       # 8. CÓDIGO
+                        tipo_sel,                           # 9. TIPO
+                        descripcion_final,                  # 10. DESCRIPCIÓN
+                        sintoma,                            # 11. ACTIVIDAD
+                        accion,                             # 12. SOLUCIÓN
+                        num_orden,                          # 13. ORDEN
+                        estatus_valor,                      # 14. ESTATUS (0, 1, 2) - REEMPLAZA PRIORIDAD
+                        evidencia,                          # 15. EVIDENCIA
+                        minutos_calc                        # 16. TIEMPO MUERTO
                     ]
 
                     hoja = conectar_google_sheet()
@@ -218,30 +227,31 @@ elif menu == "📊 Estadísticas":
     if hoja:
         filas = hoja.get_all_values()
         if len(filas) > 1:
-            # MAPEO AL NUEVO ORDEN
+            # MAPEO DE COLUMNAS ACTUALIZADO
             df = pd.DataFrame(filas[1:], columns=[
                 "SEMANA", "FECHA", "TURNO", "RESPONSABLE", "APOYO", 
                 "CELDA", "ROBOT", "CODIGO", "TIPO_FALLA", "DESCRIPCION", 
-                "ACTIVIDAD", "SOLUCION", "ORDEN", "PRIORIDAD", "TIEMPO", "EVIDENCIA"
+                "ACTIVIDAD", "SOLUCION", "ORDEN", "ESTATUS", "EVIDENCIA", "TIEMPO"
             ])
             
             df["TIEMPO"] = pd.to_numeric(df["TIEMPO"], errors='coerce').fillna(0)
+            
+            # KPI: Reportes Abiertos (Estatus 0 o 1)
+            # Convertimos a string por si acaso viene como texto desde excel
+            df["ESTATUS"] = df["ESTATUS"].astype(str)
+            abiertos = len(df[df["ESTATUS"].isin(["0", "1"])])
 
             total_fallas = len(df)
             total_tiempo = int(df["TIEMPO"].sum())
-            if "PRIORIDAD" in df.columns:
-                criticas = len(df[df["PRIORIDAD"].astype(str).str.contains("🔴", na=False)])
-            else:
-                criticas = 0
 
             k1, k2, k3 = st.columns(3)
             k1.metric("Total Reportes", total_fallas)
             k2.metric("Tiempo Muerto Total", f"{total_tiempo} min")
-            k3.metric("Fallas Críticas", criticas)
+            k3.metric("Reportes Abiertos / En Proceso", abiertos, delta_color="inverse")
             
             st.markdown("---")
             
-            tab1, tab2, tab3 = st.tabs(["🤖 Por Robot", "🔥 Por Prioridad", "🧩 Top Fallas"])
+            tab1, tab2, tab3 = st.tabs(["🤖 Por Robot", "📊 Por Estatus", "🧩 Top Fallas"])
             
             with tab1:
                 df_robot = df.groupby("ROBOT")["TIEMPO"].sum().reset_index().sort_values("TIEMPO", ascending=False)
@@ -249,14 +259,22 @@ elif menu == "📊 Estadísticas":
                 st.plotly_chart(fig1, use_container_width=True)
             
             with tab2:
-                if "PRIORIDAD" in df.columns:
-                    df_prio = df["PRIORIDAD"].value_counts().reset_index()
-                    df_prio.columns = ["PRIORIDAD", "CANTIDAD"]
-                    fig2 = px.pie(df_prio, names="PRIORIDAD", values="CANTIDAD", title="Distribución de Gravedad", hole=0.4)
-                    st.plotly_chart(fig2, use_container_width=True)
+                # Mapeamos los números a texto para la gráfica
+                df["ESTATUS_TXT"] = df["ESTATUS"].map({
+                    "0": "🛑 Sin Avance", "1": "⏳ En Proceso", "2": "✅ Cerrado"
+                }).fillna("Desconocido")
+                
+                df_est = df["ESTATUS_TXT"].value_counts().reset_index()
+                df_est.columns = ["ESTATUS", "CANTIDAD"]
+                fig2 = px.pie(df_est, names="ESTATUS", values="CANTIDAD", title="Estatus de Órdenes", hole=0.4, 
+                              color="ESTATUS", color_discrete_map={
+                                  "🛑 Sin Avance": "red", 
+                                  "⏳ En Proceso": "orange", 
+                                  "✅ Cerrado": "green"
+                              })
+                st.plotly_chart(fig2, use_container_width=True)
             
             with tab3:
-                # Usamos la descripción oficial para la gráfica
                 df["FALLA_TXT"] = df["CODIGO"] + " - " + df["DESCRIPCION"]
                 top_fallas = df["FALLA_TXT"].value_counts().head(5).reset_index()
                 top_fallas.columns = ["FALLA", "CANTIDAD"]
