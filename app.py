@@ -8,8 +8,7 @@ import os
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Mantenimiento Magna", page_icon="🏭", layout="wide")
 
-# --- CONTROL DE ESTADO (SESSION STATE) ---
-# Esto evita duplicados. Si no existe la variable, la creamos.
+# --- CONTROL DE ESTADO ---
 if 'reporte_enviado' not in st.session_state:
     st.session_state['reporte_enviado'] = False
 
@@ -70,33 +69,27 @@ else:
 
 
 # ==========================================
-# 📝 LÓGICA DE NUEVO REPORTE (CON ANTI-DUPLICADOS)
+# 📝 NUEVO REPORTE
 # ==========================================
 if menu == "📝 Nuevo Reporte":
     st.image("logo.png" if os.path.exists("logo.png") else "https://cdn-icons-png.flaticon.com/512/8636/8636080.png", width=300)
     st.title("Reporte de fallas de mantenimiento")
     st.markdown("---")
 
-    # --- PANTALLA DE ÉXITO (BLOQUEA EL FORMULARIO) ---
     if st.session_state['reporte_enviado']:
-        st.success("✅ ¡Reporte enviado y guardado correctamente en la base de datos!")
+        st.success("✅ ¡Reporte guardado exitosamente!")
         st.balloons()
-        
-        st.info("El formulario se ha bloqueado para evitar duplicados.")
-        
-        # Botón para reiniciar
         if st.button("📝 INGRESAR OTRO REPORTE", type="primary", use_container_width=True):
             st.session_state['reporte_enviado'] = False
-            st.rerun() # Recarga la página limpia
+            st.rerun()
 
-    # --- FORMULARIO NORMAL (SOLO SI NO SE HA ENVIADO) ---
     else:
         if not df_catalogo.empty and not df_tecnicos.empty and not df_celdas_robots.empty:
             
-            # === ZONA INTERACTIVA ===
+            # 1. DATOS GENERALES
             c1, c2, c3 = st.columns(3)
             with c1:
-                num_orden = st.text_input("Número de Orden:", max_chars=5, help="5 dígitos obligatorios")
+                num_orden = st.text_input("Número de Orden:", max_chars=5)
             with c2:
                 id_resp = st.text_input("No. Control Responsable:", max_chars=5)
                 col_id_t, col_nom_t = df_tecnicos.columns[0], df_tecnicos.columns[1]
@@ -111,7 +104,7 @@ if menu == "📝 Nuevo Reporte":
             with c3:
                 apoyo = st.multiselect("Personal de Apoyo:", sorted(df_tecnicos[col_nom_t].tolist()))
 
-            # UBICACIÓN
+            # 2. UBICACIÓN
             c_t, c_c, c_r = st.columns(3)
             turno = c_t.selectbox("Turno:", ["Mañana", "Tarde", "Noche"])
             cc_cel, cc_rob = df_celdas_robots.columns[0], df_celdas_robots.columns[1]
@@ -124,7 +117,7 @@ if menu == "📝 Nuevo Reporte":
 
             st.markdown("---")
             
-            # FALLA
+            # 3. FALLA
             areas_disp = sorted(df_catalogo[c_area].unique())
             index_default = 0
             try:
@@ -137,10 +130,12 @@ if menu == "📝 Nuevo Reporte":
             tipo_sel = st.selectbox("Tipo de Falla:", tipos_disp)
             
             df_f = df_catalogo[(df_catalogo[c_area] == area_sel) & (df_catalogo[c_tipo] == tipo_sel)]
+            
+            # Concatenamos visualmente: "E01 - FALLA DE MOTOR"
             opciones_falla = (df_f[c_cod].astype(str) + " - " + df_f[c_desc].astype(str)).tolist() if not df_f.empty else ["Sin datos"]
             seleccion_completa = st.selectbox("Código y Descripción de Falla:", opciones_falla)
 
-            # TIEMPOS
+            # 4. TIEMPOS
             st.write("**Tiempos de Paro (HHMM)**")
             t1, t2 = st.columns(2)
             ahora_hhmm = int(datetime.now().strftime("%H%M"))
@@ -162,42 +157,59 @@ if menu == "📝 Nuevo Reporte":
 
             # === ZONA DE CAPTURA ===
             with st.form("form_final"):
-                sintoma = st.text_area("Notas Adicionales del Técnico (Opcional):", height=80)
-                accion = st.text_area("Acción Correctiva (Solución):", height=80)
+                sintoma = st.text_area("Actividad / Notas del Técnico (Manual):", height=80)
+                accion = st.text_area("Solución / Acciones Correctivas (Manual):", height=80)
                 st.markdown("---")
                 foto = st.file_uploader("📂 Subir Evidencia (Foto de Galería)", type=["jpg", "png", "jpeg"])
                 enviar = st.form_submit_button("GUARDAR REPORTE", type="primary", use_container_width=True)
 
             if enviar:
                 if not id_resp or not num_orden:
-                    st.error("⚠️ Faltan datos obligatorios: Número de Orden o ID Responsable.")
+                    st.error("⚠️ Faltan datos: Número de Orden o ID Responsable.")
                 else:
                     evidencia = "SÍ" if foto is not None else "NO"
                     nombre_final = nom_resp if nom_resp else id_resp
+                    
+                    # === MAGIA DE SEPARACIÓN ===
+                    # Aquí separamos lo que el usuario eligió en dos variables distintas
+                    codigo_final = seleccion_completa
+                    descripcion_final = "Descripción no disponible"
+                    
+                    if " - " in seleccion_completa:
+                        partes = seleccion_completa.split(" - ", 1)
+                        codigo_final = partes[0]      # "E01"
+                        descripcion_final = partes[1] # "FALLA DE MOTOR"
 
+                    # === FILA CON EL ORDEN SOLICITADO ===
                     fila = [
-                        date.today().isocalendar()[1], date.today().strftime("%Y-%m-%d"), turno,
-                        nombre_final, ", ".join(apoyo), celda_sel, robot_sel, 
-                        seleccion_completa,
-                        prioridad,
-                        sintoma,
-                        accion, 
-                        "", # Columna L vacía
-                        num_orden, # Columna M (Orden)
-                        "", evidencia, minutos_calc, ""
+                        date.today().isocalendar()[1],      # 1. SEMANA
+                        date.today().strftime("%Y-%m-%d"),  # 2. FECHA
+                        turno,                              # 3. TURNO
+                        nombre_final,                       # 4. RESPONSABLE
+                        ", ".join(apoyo),                   # 5. APOYO
+                        celda_sel,                          # 6. CELDA
+                        robot_sel,                          # 7. ROBOT
+                        codigo_final,                       # 8. CÓDIGO DE FALLO (Solo el código)
+                        tipo_sel,                           # 9. TIPO DE FALLA (Categoría)
+                        descripcion_final,                  # 10. DESCRIPCIÓN DE FALLA (Texto automático del catálogo)
+                        sintoma,                            # 11. ACTIVIDAD (Manual)
+                        accion,                             # 12. SOLUCIÓN (Manual)
+                        num_orden,                          # 13. NÚMERO DE ORDEN
+                        prioridad,                          # 14. PRIORIDAD
+                        minutos_calc,                       # 15. TIEMPO MUERTO
+                        evidencia                           # 16. EVIDENCIA
                     ]
 
                     hoja = conectar_google_sheet()
                     if hoja:
                         hoja.append_row(fila)
-                        # --- AQUÍ ACTIVAMOS EL ESTADO DE "ENVIADO" ---
                         st.session_state['reporte_enviado'] = True
-                        st.rerun() # Recargamos para mostrar la pantalla de éxito
+                        st.rerun()
         else:
-            st.error("⚠️ Error: Faltan archivos CSV en GitHub.")
+            st.error("⚠️ Error: Faltan archivos CSV.")
 
 # ==========================================
-# 📊 SECCIÓN DE ESTADÍSTICAS
+# 📊 ESTADÍSTICAS
 # ==========================================
 elif menu == "📊 Estadísticas":
     st.title("📊 Indicadores de Mantenimiento")
@@ -206,10 +218,11 @@ elif menu == "📊 Estadísticas":
     if hoja:
         filas = hoja.get_all_values()
         if len(filas) > 1:
+            # MAPEO AL NUEVO ORDEN
             df = pd.DataFrame(filas[1:], columns=[
-                "SEMANA", "FECHA", "TURNO", "TECNICO", "APOYO", 
-                "CELDA", "ROBOT", "FALLA", "PRIORIDAD", "SINTOMA", 
-                "ACCION", "VACIO", "ORDEN", "R3", "EVIDENCIA", "TIEMPO", "EXTRA"
+                "SEMANA", "FECHA", "TURNO", "RESPONSABLE", "APOYO", 
+                "CELDA", "ROBOT", "CODIGO", "TIPO_FALLA", "DESCRIPCION", 
+                "ACTIVIDAD", "SOLUCION", "ORDEN", "PRIORIDAD", "TIEMPO", "EVIDENCIA"
             ])
             
             df["TIEMPO"] = pd.to_numeric(df["TIEMPO"], errors='coerce').fillna(0)
@@ -243,7 +256,9 @@ elif menu == "📊 Estadísticas":
                     st.plotly_chart(fig2, use_container_width=True)
             
             with tab3:
-                top_fallas = df["FALLA"].value_counts().head(5).reset_index()
+                # Usamos la descripción oficial para la gráfica
+                df["FALLA_TXT"] = df["CODIGO"] + " - " + df["DESCRIPCION"]
+                top_fallas = df["FALLA_TXT"].value_counts().head(5).reset_index()
                 top_fallas.columns = ["FALLA", "CANTIDAD"]
                 fig3 = px.bar(top_fallas, x="CANTIDAD", y="FALLA", orientation='h', title="Top 5 Fallas Más Frecuentes")
                 st.plotly_chart(fig3, use_container_width=True)
