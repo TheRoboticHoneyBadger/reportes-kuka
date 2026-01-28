@@ -106,26 +106,31 @@ if menu == "📝 Nuevo Reporte":
 
             # 2. UBICACIÓN
             c_t, c_c, c_r = st.columns(3)
-            turno = c_t.selectbox("Turno:", ["Mañana", "Tarde", "Noche"])
+            
+            # --- NUEVA BARRA DE TURNO ---
+            turno_label = c_t.select_slider(
+                "Turno:",
+                options=["☀️ Mañana", "🌤️ Tarde", "🌙 Noche"],
+                value="☀️ Mañana"
+            )
+            # Mapeo a números
+            mapa_turno = {"☀️ Mañana": 1, "🌤️ Tarde": 2, "🌙 Noche": 3}
+            turno_valor = mapa_turno[turno_label]
+            # ---------------------------
+
             cc_cel, cc_rob = df_celdas_robots.columns[0], df_celdas_robots.columns[1]
             celda_sel = c_c.selectbox("Celda:", sorted(df_celdas_robots[cc_cel].unique()))
             lista_robots = sorted(df_celdas_robots[df_celdas_robots[cc_cel] == celda_sel][cc_rob].tolist())
             robot_sel = c_r.selectbox("Robot:", lista_robots)
 
-            # --- NUEVA BARRA DE ESTATUS ---
+            # ESTATUS
             st.write("**Estatus de la Reparación**")
             estatus_label = st.select_slider(
-                "Seleccione el avance:",
+                "Avance:",
                 options=["🛑 Sin Avance", "⏳ En Proceso", "✅ Cerrado"],
-                value="✅ Cerrado" # Default en Cerrado
+                value="✅ Cerrado"
             )
-            
-            # Mapeo de Texto a Número para Excel
-            mapa_estatus = {
-                "🛑 Sin Avance": 0,
-                "⏳ En Proceso": 1,
-                "✅ Cerrado": 2
-            }
+            mapa_estatus = {"🛑 Sin Avance": 0, "⏳ En Proceso": 1, "✅ Cerrado": 2}
             estatus_valor = mapa_estatus[estatus_label]
 
             st.markdown("---")
@@ -189,11 +194,11 @@ if menu == "📝 Nuevo Reporte":
                         codigo_final = partes[0]
                         descripcion_final = partes[1]
 
-                    # --- FILA FINAL CON ESTATUS (VALOR NUMÉRICO) ---
+                    # --- FILA CON DATOS NUMÉRICOS (TURNO Y ESTATUS) ---
                     fila = [
                         date.today().isocalendar()[1],      # 1. SEMANA
                         date.today().strftime("%Y-%m-%d"),  # 2. FECHA
-                        turno,                              # 3. TURNO
+                        turno_valor,                        # 3. TURNO (1, 2, 3)
                         nombre_final,                       # 4. RESPONSABLE
                         ", ".join(apoyo),                   # 5. APOYO
                         celda_sel,                          # 6. CELDA
@@ -204,7 +209,7 @@ if menu == "📝 Nuevo Reporte":
                         sintoma,                            # 11. ACTIVIDAD
                         accion,                             # 12. SOLUCIÓN
                         num_orden,                          # 13. ORDEN
-                        estatus_valor,                      # 14. ESTATUS (0, 1, 2) - REEMPLAZA PRIORIDAD
+                        estatus_valor,                      # 14. ESTATUS (0, 1, 2)
                         evidencia,                          # 15. EVIDENCIA
                         minutos_calc                        # 16. TIEMPO MUERTO
                     ]
@@ -227,7 +232,6 @@ elif menu == "📊 Estadísticas":
     if hoja:
         filas = hoja.get_all_values()
         if len(filas) > 1:
-            # MAPEO DE COLUMNAS ACTUALIZADO
             df = pd.DataFrame(filas[1:], columns=[
                 "SEMANA", "FECHA", "TURNO", "RESPONSABLE", "APOYO", 
                 "CELDA", "ROBOT", "CODIGO", "TIPO_FALLA", "DESCRIPCION", 
@@ -236,10 +240,9 @@ elif menu == "📊 Estadísticas":
             
             df["TIEMPO"] = pd.to_numeric(df["TIEMPO"], errors='coerce').fillna(0)
             
-            # KPI: Reportes Abiertos (Estatus 0 o 1)
-            # Convertimos a string por si acaso viene como texto desde excel
+            # Convertimos ESTATUS a string para comparar
             df["ESTATUS"] = df["ESTATUS"].astype(str)
-            abiertos = len(df[df["ESTATUS"].isin(["0", "1"])])
+            abiertos = len(df[df["ESTATUS"].isin(["0", "1"])]) # 0=Sin Avance, 1=En Proceso
 
             total_fallas = len(df)
             total_tiempo = int(df["TIEMPO"].sum())
@@ -247,11 +250,11 @@ elif menu == "📊 Estadísticas":
             k1, k2, k3 = st.columns(3)
             k1.metric("Total Reportes", total_fallas)
             k2.metric("Tiempo Muerto Total", f"{total_tiempo} min")
-            k3.metric("Reportes Abiertos / En Proceso", abiertos, delta_color="inverse")
+            k3.metric("Reportes Abiertos", abiertos, delta_color="inverse")
             
             st.markdown("---")
             
-            tab1, tab2, tab3 = st.tabs(["🤖 Por Robot", "📊 Por Estatus", "🧩 Top Fallas"])
+            tab1, tab2, tab3 = st.tabs(["🤖 Por Robot", "📊 Estatus y Turno", "🧩 Top Fallas"])
             
             with tab1:
                 df_robot = df.groupby("ROBOT")["TIEMPO"].sum().reset_index().sort_values("TIEMPO", ascending=False)
@@ -259,20 +262,32 @@ elif menu == "📊 Estadísticas":
                 st.plotly_chart(fig1, use_container_width=True)
             
             with tab2:
-                # Mapeamos los números a texto para la gráfica
-                df["ESTATUS_TXT"] = df["ESTATUS"].map({
-                    "0": "🛑 Sin Avance", "1": "⏳ En Proceso", "2": "✅ Cerrado"
-                }).fillna("Desconocido")
+                c_est, c_turn = st.columns(2)
                 
-                df_est = df["ESTATUS_TXT"].value_counts().reset_index()
-                df_est.columns = ["ESTATUS", "CANTIDAD"]
-                fig2 = px.pie(df_est, names="ESTATUS", values="CANTIDAD", title="Estatus de Órdenes", hole=0.4, 
-                              color="ESTATUS", color_discrete_map={
-                                  "🛑 Sin Avance": "red", 
-                                  "⏳ En Proceso": "orange", 
-                                  "✅ Cerrado": "green"
-                              })
-                st.plotly_chart(fig2, use_container_width=True)
+                with c_est:
+                    # Mapeo Estatus para gráfica legible
+                    df["ESTATUS_TXT"] = df["ESTATUS"].map({
+                        "0": "🛑 Sin Avance", "1": "⏳ En Proceso", "2": "✅ Cerrado"
+                    }).fillna("Desconocido")
+                    
+                    df_est = df["ESTATUS_TXT"].value_counts().reset_index()
+                    df_est.columns = ["ESTATUS", "CANTIDAD"]
+                    fig2 = px.pie(df_est, names="ESTATUS", values="CANTIDAD", title="Estatus de Órdenes", hole=0.4,
+                                  color="ESTATUS", color_discrete_map={
+                                      "🛑 Sin Avance": "red", "⏳ En Proceso": "orange", "✅ Cerrado": "green"
+                                  })
+                    st.plotly_chart(fig2, use_container_width=True)
+
+                with c_turn:
+                    # Mapeo Turno para gráfica legible
+                    df["TURNO_TXT"] = df["TURNO"].astype(str).map({
+                        "1": "Mañana", "2": "Tarde", "3": "Noche"
+                    }).fillna("Desconocido")
+                    
+                    df_tur = df["TURNO_TXT"].value_counts().reset_index()
+                    df_tur.columns = ["TURNO", "CANTIDAD"]
+                    fig_tur = px.bar(df_tur, x="TURNO", y="CANTIDAD", title="Reportes por Turno", color="TURNO")
+                    st.plotly_chart(fig_tur, use_container_width=True)
             
             with tab3:
                 df["FALLA_TXT"] = df["CODIGO"] + " - " + df["DESCRIPCION"]
