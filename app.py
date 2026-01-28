@@ -106,17 +106,9 @@ if menu == "📝 Nuevo Reporte":
 
             # 2. UBICACIÓN
             c_t, c_c, c_r = st.columns(3)
-            
-            # --- NUEVA BARRA DE TURNO ---
-            turno_label = c_t.select_slider(
-                "Turno:",
-                options=["☀️ Mañana", "🌤️ Tarde", "🌙 Noche"],
-                value="☀️ Mañana"
-            )
-            # Mapeo a números
+            turno_label = c_t.select_slider("Turno:", options=["☀️ Mañana", "🌤️ Tarde", "🌙 Noche"], value="☀️ Mañana")
             mapa_turno = {"☀️ Mañana": 1, "🌤️ Tarde": 2, "🌙 Noche": 3}
             turno_valor = mapa_turno[turno_label]
-            # ---------------------------
 
             cc_cel, cc_rob = df_celdas_robots.columns[0], df_celdas_robots.columns[1]
             celda_sel = c_c.selectbox("Celda:", sorted(df_celdas_robots[cc_cel].unique()))
@@ -125,11 +117,7 @@ if menu == "📝 Nuevo Reporte":
 
             # ESTATUS
             st.write("**Estatus de la Reparación**")
-            estatus_label = st.select_slider(
-                "Avance:",
-                options=["🛑 Sin Avance", "⏳ En Proceso", "✅ Cerrado"],
-                value="✅ Cerrado"
-            )
+            estatus_label = st.select_slider("Avance:", options=["🛑 Sin Avance", "⏳ En Proceso", "✅ Cerrado"], value="✅ Cerrado")
             mapa_estatus = {"🛑 Sin Avance": 0, "⏳ En Proceso": 1, "✅ Cerrado": 2}
             estatus_valor = mapa_estatus[estatus_label]
 
@@ -186,7 +174,6 @@ if menu == "📝 Nuevo Reporte":
                     evidencia = "SÍ" if foto is not None else "NO"
                     nombre_final = nom_resp if nom_resp else id_resp
                     
-                    # Separación de Código y Descripción
                     codigo_final = seleccion_completa
                     descripcion_final = "Descripción no disponible"
                     if " - " in seleccion_completa:
@@ -194,24 +181,24 @@ if menu == "📝 Nuevo Reporte":
                         codigo_final = partes[0]
                         descripcion_final = partes[1]
 
-                    # --- FILA CON DATOS NUMÉRICOS (TURNO Y ESTATUS) ---
+                    # --- FILA FINAL (TIEMPO EN COLUMNA O = INDICE 15) ---
                     fila = [
-                        date.today().isocalendar()[1],      # 1. SEMANA
-                        date.today().strftime("%Y-%m-%d"),  # 2. FECHA
-                        turno_valor,                        # 3. TURNO (1, 2, 3)
-                        nombre_final,                       # 4. RESPONSABLE
-                        ", ".join(apoyo),                   # 5. APOYO
-                        celda_sel,                          # 6. CELDA
-                        robot_sel,                          # 7. ROBOT
-                        codigo_final,                       # 8. CÓDIGO
-                        tipo_sel,                           # 9. TIPO
-                        descripcion_final,                  # 10. DESCRIPCIÓN
-                        sintoma,                            # 11. ACTIVIDAD
-                        accion,                             # 12. SOLUCIÓN
-                        num_orden,                          # 13. ORDEN
-                        estatus_valor,                      # 14. ESTATUS (0, 1, 2)
-                        evidencia,                          # 15. EVIDENCIA
-                        minutos_calc                        # 16. TIEMPO MUERTO
+                        date.today().isocalendar()[1],      # 1. SEMANA (A)
+                        date.today().strftime("%Y-%m-%d"),  # 2. FECHA (B)
+                        turno_valor,                        # 3. TURNO (C)
+                        nombre_final,                       # 4. RESPONSABLE (D)
+                        ", ".join(apoyo),                   # 5. APOYO (E)
+                        celda_sel,                          # 6. CELDA (F)
+                        robot_sel,                          # 7. ROBOT (G)
+                        codigo_final,                       # 8. CÓDIGO (H)
+                        tipo_sel,                           # 9. TIPO (I)
+                        descripcion_final,                  # 10. DESCRIPCIÓN (J)
+                        sintoma,                            # 11. ACTIVIDAD (K)
+                        accion,                             # 12. SOLUCIÓN (L)
+                        num_orden,                          # 13. ORDEN (M)
+                        estatus_valor,                      # 14. ESTATUS (N)
+                        minutos_calc,                       # 15. TIEMPO MUERTO (O) <--- AQUÍ ESTÁ
+                        evidencia                           # 16. EVIDENCIA (P)
                     ]
 
                     hoja = conectar_google_sheet()
@@ -232,17 +219,16 @@ elif menu == "📊 Estadísticas":
     if hoja:
         filas = hoja.get_all_values()
         if len(filas) > 1:
+            # MAPEO DE COLUMNAS ACTUALIZADO (TIEMPO ANTES DE EVIDENCIA)
             df = pd.DataFrame(filas[1:], columns=[
                 "SEMANA", "FECHA", "TURNO", "RESPONSABLE", "APOYO", 
                 "CELDA", "ROBOT", "CODIGO", "TIPO_FALLA", "DESCRIPCION", 
-                "ACTIVIDAD", "SOLUCION", "ORDEN", "ESTATUS", "EVIDENCIA", "TIEMPO"
+                "ACTIVIDAD", "SOLUCION", "ORDEN", "ESTATUS", "TIEMPO", "EVIDENCIA"
             ])
             
             df["TIEMPO"] = pd.to_numeric(df["TIEMPO"], errors='coerce').fillna(0)
-            
-            # Convertimos ESTATUS a string para comparar
             df["ESTATUS"] = df["ESTATUS"].astype(str)
-            abiertos = len(df[df["ESTATUS"].isin(["0", "1"])]) # 0=Sin Avance, 1=En Proceso
+            abiertos = len(df[df["ESTATUS"].isin(["0", "1"])])
 
             total_fallas = len(df)
             total_tiempo = int(df["TIEMPO"].sum())
@@ -263,37 +249,31 @@ elif menu == "📊 Estadísticas":
             
             with tab2:
                 c_est, c_turn = st.columns(2)
-                
                 with c_est:
-                    # Mapeo Estatus para gráfica legible
                     df["ESTATUS_TXT"] = df["ESTATUS"].map({
                         "0": "🛑 Sin Avance", "1": "⏳ En Proceso", "2": "✅ Cerrado"
                     }).fillna("Desconocido")
-                    
                     df_est = df["ESTATUS_TXT"].value_counts().reset_index()
                     df_est.columns = ["ESTATUS", "CANTIDAD"]
-                    fig2 = px.pie(df_est, names="ESTATUS", values="CANTIDAD", title="Estatus de Órdenes", hole=0.4,
+                    fig2 = px.pie(df_est, names="ESTATUS", values="CANTIDAD", title="Estatus", hole=0.4,
                                   color="ESTATUS", color_discrete_map={
                                       "🛑 Sin Avance": "red", "⏳ En Proceso": "orange", "✅ Cerrado": "green"
                                   })
                     st.plotly_chart(fig2, use_container_width=True)
-
                 with c_turn:
-                    # Mapeo Turno para gráfica legible
                     df["TURNO_TXT"] = df["TURNO"].astype(str).map({
                         "1": "Mañana", "2": "Tarde", "3": "Noche"
                     }).fillna("Desconocido")
-                    
                     df_tur = df["TURNO_TXT"].value_counts().reset_index()
                     df_tur.columns = ["TURNO", "CANTIDAD"]
-                    fig_tur = px.bar(df_tur, x="TURNO", y="CANTIDAD", title="Reportes por Turno", color="TURNO")
+                    fig_tur = px.bar(df_tur, x="TURNO", y="CANTIDAD", title="Por Turno", color="TURNO")
                     st.plotly_chart(fig_tur, use_container_width=True)
             
             with tab3:
                 df["FALLA_TXT"] = df["CODIGO"] + " - " + df["DESCRIPCION"]
                 top_fallas = df["FALLA_TXT"].value_counts().head(5).reset_index()
                 top_fallas.columns = ["FALLA", "CANTIDAD"]
-                fig3 = px.bar(top_fallas, x="CANTIDAD", y="FALLA", orientation='h', title="Top 5 Fallas Más Frecuentes")
+                fig3 = px.bar(top_fallas, x="CANTIDAD", y="FALLA", orientation='h', title="Top 5 Fallas", color="CANTIDAD")
                 st.plotly_chart(fig3, use_container_width=True)
         else:
             st.info("📊 Esperando datos...")
