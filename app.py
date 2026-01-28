@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date, timedelta, time
 import gspread
+import plotly.express as px
 import os
 
 # --- CONFIGURACIÓN DE PÁGINA ---
@@ -32,7 +33,6 @@ def cargar_datos_seguros():
         df_t = pd.read_csv('tecnicos.csv', dtype=str)
         df_cr = pd.read_csv('celdas_robots.csv', dtype=str)
         
-        # Limpieza básica
         df_c.columns = [str(c).strip().upper() for c in df_c.columns]
         df_t.columns = [str(c).strip().upper() for c in df_t.columns]
         df_cr.columns = [str(c).strip().upper() for c in df_cr.columns]
@@ -47,7 +47,7 @@ df_catalogo, df_tecnicos, df_celdas_robots = cargar_datos_seguros()
 st.sidebar.title("🔧 Menú")
 menu = st.sidebar.radio("Ir a:", ["📝 Nuevo Reporte", "📊 Estadísticas"])
 
-# --- CONFIGURACIÓN DE COLUMNAS ---
+# --- CONFIGURACIÓN DE COLUMNAS (CATÁLOGO) ---
 if not df_catalogo.empty:
     cols = df_catalogo.columns.tolist()
     idx_area = next((i for i, c in enumerate(cols) if any(x in c for x in ['AREA', 'UBICACION'])), 0)
@@ -71,9 +71,7 @@ if menu == "📝 Nuevo Reporte":
 
     if not df_catalogo.empty and not df_tecnicos.empty and not df_celdas_robots.empty:
         
-        # === ZONA INTERACTIVA ===
-        
-        # 1. IDENTIFICACIÓN
+        # ZONA INTERACTIVA
         c1, c2 = st.columns(2)
         with c1:
             id_resp = st.text_input("Número de control responsable:", max_chars=5)
@@ -90,10 +88,8 @@ if menu == "📝 Nuevo Reporte":
         with c2:
             apoyo = st.multiselect("Personal de Apoyo:", sorted(df_tecnicos[col_nom_t].tolist()))
 
-        # 2. UBICACIÓN
         c3, c4, c5 = st.columns(3)
         turno = c3.selectbox("Turno:", ["Mañana", "Tarde", "Noche"])
-        
         cc_cel, cc_rob = df_celdas_robots.columns[0], df_celdas_robots.columns[1]
         celda_sel = c4.selectbox("Celda:", sorted(df_celdas_robots[cc_cel].unique()))
         lista_robots = sorted(df_celdas_robots[df_celdas_robots[cc_cel] == celda_sel][cc_rob].tolist())
@@ -104,7 +100,7 @@ if menu == "📝 Nuevo Reporte":
 
         st.markdown("---")
         
-        # 3. FALLA (DEFAULT "MANTENIMIENTO")
+        # Falla con default "Mantenimiento"
         areas_disp = sorted(df_catalogo[c_area].unique())
         index_default = 0
         try:
@@ -120,18 +116,15 @@ if menu == "📝 Nuevo Reporte":
         opciones_falla = (df_f[c_cod].astype(str) + " - " + df_f[c_desc].astype(str)).tolist() if not df_f.empty else ["Sin datos"]
         seleccion_completa = st.selectbox("Código y Descripción de Falla:", opciones_falla)
 
-        # 4. CÁLCULO DE TIEMPO
         st.write("**Tiempos de Paro (HHMM)**")
         t1, t2 = st.columns(2)
         ahora_hhmm = int(datetime.now().strftime("%H%M"))
-        
         num_ini = t1.number_input("Hora Inicio:", value=ahora_hhmm, step=1)
         num_fin = t2.number_input("Hora Fin:", value=ahora_hhmm, step=1)
 
         h_i_calc, h_f_calc = convertir_a_hora(num_ini), convertir_a_hora(num_fin)
         dt_i_calc = datetime.combine(date.today(), h_i_calc)
         dt_f_calc = datetime.combine(date.today(), h_f_calc)
-        
         if dt_f_calc < dt_i_calc: dt_f_calc += timedelta(days=1)
         minutos_calc = int((dt_f_calc - dt_i_calc).total_seconds() / 60)
         
@@ -142,16 +135,11 @@ if menu == "📝 Nuevo Reporte":
         else:
             st.error("⚠️ Error en tiempos")
 
-
-        # === ZONA DE CAPTURA ===
         with st.form("form_final"):
             sintoma = st.text_area("Notas Adicionales del Técnico (Opcional):", height=80)
             accion = st.text_area("Acción Correctiva:", height=80)
-
             st.markdown("---")
-            # CAMBIO AQUÍ: Usamos file_uploader en lugar de camera_input
             foto = st.file_uploader("📂 Subir Evidencia (Foto de Galería)", type=["jpg", "png", "jpeg"])
-
             enviar = st.form_submit_button("GUARDAR REPORTE", type="primary", use_container_width=True)
 
         if enviar:
@@ -160,14 +148,24 @@ if menu == "📝 Nuevo Reporte":
             else:
                 evidencia = "SÍ" if foto is not None else "NO"
                 nombre_final = nom_resp if nom_resp else id_resp
-
+                
+                # ESTRUCTURA FIJA DE COLUMNAS (IMPORTANTE PARA ESTADÍSTICAS)
                 fila = [
-                    date.today().isocalendar()[1], date.today().strftime("%Y-%m-%d"), turno,
-                    nombre_final, ", ".join(apoyo), celda_sel, robot_sel, 
-                    seleccion_completa,
-                    prioridad,
-                    sintoma,
-                    accion, "", "", "", evidencia, minutos_calc, ""
+                    date.today().isocalendar()[1],  # 0: Semana
+                    date.today().strftime("%Y-%m-%d"), # 1: Fecha
+                    turno,                          # 2: Turno
+                    nombre_final,                   # 3: Tecnico
+                    ", ".join(apoyo),               # 4: Apoyo
+                    celda_sel,                      # 5: Celda
+                    robot_sel,                      # 6: Robot
+                    seleccion_completa,             # 7: Falla
+                    prioridad,                      # 8: Prioridad
+                    sintoma,                        # 9: Sintoma
+                    accion,                         # 10: Accion
+                    "", "", "",                     # 11, 12, 13: Reservados
+                    evidencia,                      # 14: Evidencia
+                    minutos_calc,                   # 15: Tiempo
+                    ""                              # 16: Extra
                 ]
 
                 hoja = conectar_google_sheet()
@@ -175,10 +173,71 @@ if menu == "📝 Nuevo Reporte":
                     hoja.append_row(fila)
                     st.balloons()
                     st.success(f"✅ Guardado. T.Muerto: {minutos_calc} min")
-
     else:
         st.error("⚠️ Error: Faltan archivos CSV en GitHub.")
 
+# ==========================================
+# 📊 SECCIÓN DE ESTADÍSTICAS CORREGIDA
+# ==========================================
 elif menu == "📊 Estadísticas":
-    st.title("📊 Indicadores")
-    # Estadísticas se mantiene igual
+    st.title("📊 Indicadores de Mantenimiento")
+    hoja = conectar_google_sheet()
+    
+    if hoja:
+        # Usamos get_all_values para traer todo como matriz, sin depender de los títulos
+        filas = hoja.get_all_values()
+        
+        if len(filas) > 1: # Si hay más de 1 fila (encabezados + datos)
+            # Creamos DataFrame manualmente nombrando las columnas nosotros mismos
+            # Esto evita errores si en el Excel se llaman diferente
+            df = pd.DataFrame(filas[1:], columns=[
+                "SEMANA", "FECHA", "TURNO", "TECNICO", "APOYO", 
+                "CELDA", "ROBOT", "FALLA", "PRIORIDAD", "SINTOMA", 
+                "ACCION", "R1", "R2", "R3", "EVIDENCIA", "TIEMPO", "EXTRA"
+            ])
+
+            # Convertimos Tiempo a números (limpiando posibles errores)
+            df["TIEMPO"] = pd.to_numeric(df["TIEMPO"], errors='coerce').fillna(0)
+
+            # KPIs Principales
+            total_fallas = len(df)
+            total_tiempo = int(df["TIEMPO"].sum())
+            
+            k1, k2, k3 = st.columns(3)
+            k1.metric("Total Reportes", total_fallas)
+            k2.metric("Tiempo Muerto Total", f"{total_tiempo} min")
+            
+            # KPI de Fallas Críticas (buscamos el puntito rojo)
+            criticas = len(df[df["PRIORIDAD"].str.contains("🔴", na=False)])
+            k3.metric("Fallas Críticas (🔴)", criticas)
+            
+            st.markdown("---")
+            
+            # Pestañas de Gráficas
+            tab1, tab2, tab3 = st.tabs(["🤖 Por Robot", "🔥 Por Prioridad", "🧩 Top Fallas"])
+            
+            with tab1:
+                # Agrupamos por Robot y sumamos tiempo
+                df_robot = df.groupby("ROBOT")["TIEMPO"].sum().reset_index().sort_values("TIEMPO", ascending=False)
+                fig1 = px.bar(df_robot, x="ROBOT", y="TIEMPO", title="Tiempo Muerto por Robot (Minutos)", color="TIEMPO", color_continuous_scale="Reds")
+                st.plotly_chart(fig1, use_container_width=True)
+            
+            with tab2:
+                # Conteo de prioridades
+                df_prio = df["PRIORIDAD"].value_counts().reset_index()
+                df_prio.columns = ["PRIORIDAD", "CANTIDAD"]
+                fig2 = px.pie(df_prio, names="PRIORIDAD", values="CANTIDAD", title="Distribución de Gravedad", hole=0.4)
+                st.plotly_chart(fig2, use_container_width=True)
+                
+            with tab3:
+                # Top 5 Fallas más frecuentes
+                top_fallas = df["FALLA"].value_counts().head(5).reset_index()
+                top_fallas.columns = ["FALLA", "CANTIDAD"]
+                fig3 = px.bar(top_fallas, x="CANTIDAD", y="FALLA", orientation='h', title="Top 5 Fallas Más Frecuentes")
+                st.plotly_chart(fig3, use_container_width=True)
+
+        else:
+            st.info("📊 Aún no hay suficientes datos registrados para generar gráficas.")
+            st.write("Registra tu primer reporte en la pestaña 'Nuevo Reporte'.")
+    else:
+        st.error("❌ No se pudo conectar con Google Sheets.")
