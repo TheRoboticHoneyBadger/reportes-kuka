@@ -143,18 +143,18 @@ if menu == "📝 Nuevo Reporte":
             opciones_falla = (df_f[c_cod].astype(str) + " - " + df_f[c_desc].astype(str)).tolist() if not df_f.empty else ["Sin datos"]
             seleccion_completa = st.selectbox("Código y Descripción de Falla:", opciones_falla)
 
-            # 4. TIEMPOS (RELOJ 24H)
+            # 4. TIEMPOS (RELOJ 24H CORREGIDO)
             st.write("**Tiempos de Paro (24 Horas)**")
             t1, t2 = st.columns(2)
             
-            # Hora actual y +5 minutos
-            now = datetime.now()
+            # Hora actual limpia (sin segundos)
+            now = datetime.now().replace(second=0, microsecond=0)
             hora_inicio_default = now.time()
             hora_fin_default = (now + timedelta(minutes=5)).time()
             
-            # Usamos st.time_input para formato HH:MM visual
-            t_ini = t1.time_input("Hora Inicio:", value=hora_inicio_default)
-            t_fin = t2.time_input("Hora Fin:", value=hora_fin_default)
+            # AGREGAMOS step=60 PARA PERMITIR SELECCIÓN MINUTO A MINUTO
+            t_ini = t1.time_input("Hora Inicio:", value=hora_inicio_default, step=60)
+            t_fin = t2.time_input("Hora Fin:", value=hora_fin_default, step=60)
 
             # Cálculo de diferencia
             dt_i_calc = datetime.combine(date.today(), t_ini)
