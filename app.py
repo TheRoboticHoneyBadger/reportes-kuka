@@ -8,6 +8,20 @@ import os
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Mantenimiento Magna", page_icon="🏭", layout="wide")
 
+# --- CSS: QUITAR FLECHAS DEL INPUT NUMÉRICO ---
+st.markdown("""
+    <style>
+        [data-testid="stNumberInput"] input {
+            -moz-appearance: textfield;
+        }
+        [data-testid="stNumberInput"] input::-webkit-outer-spin-button,
+        [data-testid="stNumberInput"] input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- CONTROL DE ESTADO ---
 if 'reporte_enviado' not in st.session_state:
     st.session_state['reporte_enviado'] = False
@@ -87,28 +101,36 @@ if menu == "📝 Nuevo Reporte":
     else:
         if not df_catalogo.empty and not df_tecnicos.empty and not df_celdas_robots.empty:
             
-            # 1. DATOS GENERALES
+            # 1. DATOS GENERALES (TECLADO NUMÉRICO + LÍMITE 5 DÍGITOS)
             c1, c2, c3 = st.columns(3)
             with c1:
-                num_orden = st.text_input("Número de Orden:", max_chars=5)
+                # max_value=99999 asegura que sean maximo 5 digitos
+                val_orden = st.number_input("Número de Orden:", min_value=0, max_value=99999, step=1, format="%d", value=None, placeholder="Ej: 12345")
+                num_orden = str(int(val_orden)).zfill(5) if val_orden is not None else ""
+                
             with c2:
-                id_resp = st.text_input("No. Control Responsable:", max_chars=5)
+                # max_value=99999 para ID también
+                val_resp = st.number_input("No. Control Responsable:", min_value=0, max_value=99999, step=1, format="%d", value=None, placeholder="Ej: 99999")
+                id_resp = str(int(val_resp)).zfill(5) if val_resp is not None else ""
+                
+                # Búsqueda de técnico
                 col_id_t, col_nom_t = df_tecnicos.columns[0], df_tecnicos.columns[1]
                 nom_resp = ""
-                if id_resp:
+                # Solo buscamos si tiene algún valor
+                if id_resp and int(id_resp) > 0:
                     m = df_tecnicos[df_tecnicos[col_id_t] == id_resp]
                     if not m.empty:
                         nom_resp = m[col_nom_t].iloc[0]
                         st.success(f"👤 {nom_resp}")
                     else:
                         st.warning("⚠️ ID no encontrado")
+                        
             with c3:
                 apoyo = st.multiselect("Personal de Apoyo:", sorted(df_tecnicos[col_nom_t].tolist()))
 
             # 2. UBICACIÓN Y TURNO
             c_t, c_c, c_r = st.columns(3)
             
-            # Turno Automático
             turno_sugerido = obtener_turno_actual()
             turno_label = c_t.select_slider("Turno:", options=["☀️ Mañana", "🌤️ Tarde", "🌙 Noche"], value=turno_sugerido)
             mapa_turno = {"☀️ Mañana": 1, "🌤️ Tarde": 2, "🌙 Noche": 3}
@@ -143,24 +165,20 @@ if menu == "📝 Nuevo Reporte":
             opciones_falla = (df_f[c_cod].astype(str) + " - " + df_f[c_desc].astype(str)).tolist() if not df_f.empty else ["Sin datos"]
             seleccion_completa = st.selectbox("Código y Descripción de Falla:", opciones_falla)
 
-            # 4. TIEMPOS (RELOJ 24H CORREGIDO)
+            # 4. TIEMPOS (RELOJ 24H MINUTO A MINUTO)
             st.write("**Tiempos de Paro (24 Horas)**")
             t1, t2 = st.columns(2)
             
-            # Hora actual limpia (sin segundos)
             now = datetime.now().replace(second=0, microsecond=0)
             hora_inicio_default = now.time()
             hora_fin_default = (now + timedelta(minutes=5)).time()
             
-            # AGREGAMOS step=60 PARA PERMITIR SELECCIÓN MINUTO A MINUTO
             t_ini = t1.time_input("Hora Inicio:", value=hora_inicio_default, step=60)
             t_fin = t2.time_input("Hora Fin:", value=hora_fin_default, step=60)
 
-            # Cálculo de diferencia
             dt_i_calc = datetime.combine(date.today(), t_ini)
             dt_f_calc = datetime.combine(date.today(), t_fin)
             
-            # Si la hora fin es menor a inicio, asumimos que pasó la medianoche
             if dt_f_calc < dt_i_calc: 
                 dt_f_calc += timedelta(days=1)
             
@@ -169,9 +187,9 @@ if menu == "📝 Nuevo Reporte":
             if minutos_calc > 0:
                 st.info(f"⏱️ Tiempo de paro: **{minutos_calc} minutos**")
             elif minutos_calc == 0:
-                st.warning("⚠️ 0 minutos (Hora inicio y fin son iguales)")
+                st.warning("⚠️ 0 minutos")
             else:
-                st.error("⚠️ Error en cálculo de tiempo")
+                st.error("⚠️ Error en tiempos")
 
             # === ZONA DE CAPTURA ===
             with st.form("form_final"):
