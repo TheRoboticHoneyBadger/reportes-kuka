@@ -21,7 +21,7 @@ def conectar_google_sheet():
     except:
         return None
 
-# --- FUNCIÓN DE CONVERSIÓN DE HORA ---
+# --- FUNCIÓN DE CONVERSIÓN DE HORA (Visualización) ---
 def convertir_a_hora(valor):
     try:
         texto = str(int(valor)).zfill(4)
@@ -29,6 +29,17 @@ def convertir_a_hora(valor):
         return time(min(h, 23), min(m, 59))
     except:
         return time(0, 0)
+
+# --- FUNCIÓN PARA DETECTAR TURNO AUTOMÁTICO ---
+def obtener_turno_actual():
+    hora = datetime.now().hour
+    # Lógica estándar de turnos (ajustable si tus horarios son distintos)
+    if 6 <= hora < 14:
+        return "☀️ Mañana"
+    elif 14 <= hora < 22:
+        return "🌤️ Tarde"
+    else:
+        return "🌙 Noche"
 
 # --- CARGA DE DATOS ---
 def cargar_datos_seguros():
@@ -104,9 +115,17 @@ if menu == "📝 Nuevo Reporte":
             with c3:
                 apoyo = st.multiselect("Personal de Apoyo:", sorted(df_tecnicos[col_nom_t].tolist()))
 
-            # 2. UBICACIÓN
+            # 2. UBICACIÓN Y TURNO AUTOMÁTICO
             c_t, c_c, c_r = st.columns(3)
-            turno_label = c_t.select_slider("Turno:", options=["☀️ Mañana", "🌤️ Tarde", "🌙 Noche"], value="☀️ Mañana")
+            
+            # Lógica de turno automático
+            turno_sugerido = obtener_turno_actual()
+            
+            turno_label = c_t.select_slider(
+                "Turno:",
+                options=["☀️ Mañana", "🌤️ Tarde", "🌙 Noche"],
+                value=turno_sugerido # <--- AQUÍ SE PONE EL VALOR AUTOMÁTICO
+            )
             mapa_turno = {"☀️ Mañana": 1, "🌤️ Tarde": 2, "🌙 Noche": 3}
             turno_valor = mapa_turno[turno_label]
 
@@ -139,13 +158,22 @@ if menu == "📝 Nuevo Reporte":
             opciones_falla = (df_f[c_cod].astype(str) + " - " + df_f[c_desc].astype(str)).tolist() if not df_f.empty else ["Sin datos"]
             seleccion_completa = st.selectbox("Código y Descripción de Falla:", opciones_falla)
 
-            # 4. TIEMPOS
+            # 4. TIEMPOS AUTOMÁTICOS (+5 MIN)
             st.write("**Tiempos de Paro (HHMM)**")
             t1, t2 = st.columns(2)
-            ahora_hhmm = int(datetime.now().strftime("%H%M"))
-            num_ini = t1.number_input("Hora Inicio:", value=ahora_hhmm, step=1)
-            num_fin = t2.number_input("Hora Fin:", value=ahora_hhmm, step=1)
+            
+            # Cálculo de horas por default
+            dt_now = datetime.now()
+            default_ini = int(dt_now.strftime("%H%M"))
+            
+            dt_end_auto = dt_now + timedelta(minutes=5) # Sumamos 5 minutos
+            default_fin = int(dt_end_auto.strftime("%H%M"))
+            
+            # Inputs con valores por defecto dinámicos
+            num_ini = t1.number_input("Hora Inicio:", value=default_ini, step=1)
+            num_fin = t2.number_input("Hora Fin:", value=default_fin, step=1)
 
+            # Cálculo de diferencia para mostrar
             h_i_calc, h_f_calc = convertir_a_hora(num_ini), convertir_a_hora(num_fin)
             dt_i_calc = datetime.combine(date.today(), h_i_calc)
             dt_f_calc = datetime.combine(date.today(), h_f_calc)
@@ -181,23 +209,23 @@ if menu == "📝 Nuevo Reporte":
                         codigo_final = partes[0]
                         descripcion_final = partes[1]
 
-                    # --- FILA FINAL (TIEMPO EN COLUMNA O = INDICE 15) ---
+                    # --- FILA FINAL ---
                     fila = [
-                        date.today().isocalendar()[1],      # 1. SEMANA (A)
-                        date.today().strftime("%Y-%m-%d"),  # 2. FECHA (B)
-                        turno_valor,                        # 3. TURNO (C)
-                        nombre_final,                       # 4. RESPONSABLE (D)
-                        ", ".join(apoyo),                   # 5. APOYO (E)
-                        celda_sel,                          # 6. CELDA (F)
-                        robot_sel,                          # 7. ROBOT (G)
-                        codigo_final,                       # 8. CÓDIGO (H)
-                        tipo_sel,                           # 9. TIPO (I)
-                        descripcion_final,                  # 10. DESCRIPCIÓN (J)
-                        sintoma,                            # 11. ACTIVIDAD (K)
-                        accion,                             # 12. SOLUCIÓN (L)
-                        num_orden,                          # 13. ORDEN (M)
-                        estatus_valor,                      # 14. ESTATUS (N)
-                        minutos_calc,                       # 15. TIEMPO MUERTO (O) <--- AQUÍ ESTÁ
+                        date.today().isocalendar()[1],      # 1. SEMANA
+                        date.today().strftime("%Y-%m-%d"),  # 2. FECHA
+                        turno_valor,                        # 3. TURNO (Con lógica automática)
+                        nombre_final,                       # 4. RESPONSABLE
+                        ", ".join(apoyo),                   # 5. APOYO
+                        celda_sel,                          # 6. CELDA
+                        robot_sel,                          # 7. ROBOT
+                        codigo_final,                       # 8. CÓDIGO
+                        tipo_sel,                           # 9. TIPO
+                        descripcion_final,                  # 10. DESCRIPCIÓN
+                        sintoma,                            # 11. ACTIVIDAD
+                        accion,                             # 12. SOLUCIÓN
+                        num_orden,                          # 13. ORDEN
+                        estatus_valor,                      # 14. ESTATUS
+                        minutos_calc,                       # 15. TIEMPO (O)
                         evidencia                           # 16. EVIDENCIA (P)
                     ]
 
@@ -219,7 +247,6 @@ elif menu == "📊 Estadísticas":
     if hoja:
         filas = hoja.get_all_values()
         if len(filas) > 1:
-            # MAPEO DE COLUMNAS ACTUALIZADO (TIEMPO ANTES DE EVIDENCIA)
             df = pd.DataFrame(filas[1:], columns=[
                 "SEMANA", "FECHA", "TURNO", "RESPONSABLE", "APOYO", 
                 "CELDA", "ROBOT", "CODIGO", "TIPO_FALLA", "DESCRIPCION", 
