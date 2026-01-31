@@ -21,19 +21,9 @@ def conectar_google_sheet():
     except:
         return None
 
-# --- FUNCIÓN DE CONVERSIÓN DE HORA (Visualización) ---
-def convertir_a_hora(valor):
-    try:
-        texto = str(int(valor)).zfill(4)
-        h, m = int(texto[:2]), int(texto[2:])
-        return time(min(h, 23), min(m, 59))
-    except:
-        return time(0, 0)
-
-# --- FUNCIÓN PARA DETECTAR TURNO AUTOMÁTICO ---
+# --- DETECTOR DE TURNO AUTOMÁTICO ---
 def obtener_turno_actual():
     hora = datetime.now().hour
-    # Lógica estándar de turnos (ajustable si tus horarios son distintos)
     if 6 <= hora < 14:
         return "☀️ Mañana"
     elif 14 <= hora < 22:
@@ -115,17 +105,12 @@ if menu == "📝 Nuevo Reporte":
             with c3:
                 apoyo = st.multiselect("Personal de Apoyo:", sorted(df_tecnicos[col_nom_t].tolist()))
 
-            # 2. UBICACIÓN Y TURNO AUTOMÁTICO
+            # 2. UBICACIÓN Y TURNO
             c_t, c_c, c_r = st.columns(3)
             
-            # Lógica de turno automático
+            # Turno Automático
             turno_sugerido = obtener_turno_actual()
-            
-            turno_label = c_t.select_slider(
-                "Turno:",
-                options=["☀️ Mañana", "🌤️ Tarde", "🌙 Noche"],
-                value=turno_sugerido # <--- AQUÍ SE PONE EL VALOR AUTOMÁTICO
-            )
+            turno_label = c_t.select_slider("Turno:", options=["☀️ Mañana", "🌤️ Tarde", "🌙 Noche"], value=turno_sugerido)
             mapa_turno = {"☀️ Mañana": 1, "🌤️ Tarde": 2, "🌙 Noche": 3}
             turno_valor = mapa_turno[turno_label]
 
@@ -158,34 +143,35 @@ if menu == "📝 Nuevo Reporte":
             opciones_falla = (df_f[c_cod].astype(str) + " - " + df_f[c_desc].astype(str)).tolist() if not df_f.empty else ["Sin datos"]
             seleccion_completa = st.selectbox("Código y Descripción de Falla:", opciones_falla)
 
-            # 4. TIEMPOS AUTOMÁTICOS (+5 MIN)
-            st.write("**Tiempos de Paro (HHMM)**")
+            # 4. TIEMPOS (RELOJ 24H)
+            st.write("**Tiempos de Paro (24 Horas)**")
             t1, t2 = st.columns(2)
             
-            # Cálculo de horas por default
-            dt_now = datetime.now()
-            default_ini = int(dt_now.strftime("%H%M"))
+            # Hora actual y +5 minutos
+            now = datetime.now()
+            hora_inicio_default = now.time()
+            hora_fin_default = (now + timedelta(minutes=5)).time()
             
-            dt_end_auto = dt_now + timedelta(minutes=5) # Sumamos 5 minutos
-            default_fin = int(dt_end_auto.strftime("%H%M"))
-            
-            # Inputs con valores por defecto dinámicos
-            num_ini = t1.number_input("Hora Inicio:", value=default_ini, step=1)
-            num_fin = t2.number_input("Hora Fin:", value=default_fin, step=1)
+            # Usamos st.time_input para formato HH:MM visual
+            t_ini = t1.time_input("Hora Inicio:", value=hora_inicio_default)
+            t_fin = t2.time_input("Hora Fin:", value=hora_fin_default)
 
-            # Cálculo de diferencia para mostrar
-            h_i_calc, h_f_calc = convertir_a_hora(num_ini), convertir_a_hora(num_fin)
-            dt_i_calc = datetime.combine(date.today(), h_i_calc)
-            dt_f_calc = datetime.combine(date.today(), h_f_calc)
-            if dt_f_calc < dt_i_calc: dt_f_calc += timedelta(days=1)
+            # Cálculo de diferencia
+            dt_i_calc = datetime.combine(date.today(), t_ini)
+            dt_f_calc = datetime.combine(date.today(), t_fin)
+            
+            # Si la hora fin es menor a inicio, asumimos que pasó la medianoche
+            if dt_f_calc < dt_i_calc: 
+                dt_f_calc += timedelta(days=1)
+            
             minutos_calc = int((dt_f_calc - dt_i_calc).total_seconds() / 60)
             
             if minutos_calc > 0:
                 st.info(f"⏱️ Tiempo de paro: **{minutos_calc} minutos**")
             elif minutos_calc == 0:
-                st.warning("⚠️ 0 min")
+                st.warning("⚠️ 0 minutos (Hora inicio y fin son iguales)")
             else:
-                st.error("⚠️ Error en tiempos")
+                st.error("⚠️ Error en cálculo de tiempo")
 
             # === ZONA DE CAPTURA ===
             with st.form("form_final"):
@@ -213,7 +199,7 @@ if menu == "📝 Nuevo Reporte":
                     fila = [
                         date.today().isocalendar()[1],      # 1. SEMANA
                         date.today().strftime("%Y-%m-%d"),  # 2. FECHA
-                        turno_valor,                        # 3. TURNO (Con lógica automática)
+                        turno_valor,                        # 3. TURNO
                         nombre_final,                       # 4. RESPONSABLE
                         ", ".join(apoyo),                   # 5. APOYO
                         celda_sel,                          # 6. CELDA
@@ -225,8 +211,8 @@ if menu == "📝 Nuevo Reporte":
                         accion,                             # 12. SOLUCIÓN
                         num_orden,                          # 13. ORDEN
                         estatus_valor,                      # 14. ESTATUS
-                        minutos_calc,                       # 15. TIEMPO (O)
-                        evidencia                           # 16. EVIDENCIA (P)
+                        minutos_calc,                       # 15. TIEMPO
+                        evidencia                           # 16. EVIDENCIA
                     ]
 
                     hoja = conectar_google_sheet()
